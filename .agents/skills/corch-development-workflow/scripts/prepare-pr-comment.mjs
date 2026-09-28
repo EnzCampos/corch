@@ -2,7 +2,6 @@
 import { REPOSITORY, BASE_BRANCH } from "./workflow-config.mjs";
 import { isHttpsUrl } from "./task-source.mjs";
 
-
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -49,7 +48,10 @@ function parseArguments(argv) {
       args.resultPath = argv[++index];
     } else if (current === "--evidence-url") {
       args.evidenceUrl = argv[++index];
-      if (args.evidenceUrl === undefined) throw new WorkflowValidationError(["--evidence-url requires a credential-free HTTPS URL"]);
+      if (args.evidenceUrl === undefined)
+        throw new WorkflowValidationError([
+          "--evidence-url requires a credential-free HTTPS URL",
+        ]);
     } else {
       throw new WorkflowValidationError([`unknown argument: ${current}`]);
     }
@@ -58,16 +60,26 @@ function parseArguments(argv) {
     return args;
   }
   const missing = [
-    "issueKey", "pullRequestNumber", "gate", "headBranch", "resultPath",
+    "issueKey",
+    "pullRequestNumber",
+    "gate",
+    "headBranch",
+    "resultPath",
   ].filter((field) => !args[field]);
   if (missing.length > 0) {
-    throw new WorkflowValidationError([`missing arguments: ${missing.join(", ")}`]);
+    throw new WorkflowValidationError([
+      `missing arguments: ${missing.join(", ")}`,
+    ]);
   }
   if (!new Set(["review", "test", "handoff"]).has(args.gate)) {
-    throw new WorkflowValidationError(["--gate must be review, test, or handoff"]);
+    throw new WorkflowValidationError([
+      "--gate must be review, test, or handoff",
+    ]);
   }
   if (args.evidenceUrl !== undefined && !isHttpsUrl(args.evidenceUrl)) {
-    throw new WorkflowValidationError(["--evidence-url must be a credential-free HTTPS URL"]);
+    throw new WorkflowValidationError([
+      "--evidence-url must be a credential-free HTTPS URL",
+    ]);
   }
   return args;
 }
@@ -80,13 +92,17 @@ function gitRoot() {
     windowsHide: true,
   });
   if (result.status !== 0) {
-    throw new WorkflowValidationError(["PR comment preparation requires a Git repository"]);
+    throw new WorkflowValidationError([
+      "PR comment preparation requires a Git repository",
+    ]);
   }
   return result.stdout.trim();
 }
 
 function bulletAcceptance(acceptance) {
-  return acceptance.map((item) => `- **${item.status}** — ${item.criterion}: ${item.evidence}`).join("\n");
+  return acceptance
+    .map((item) => `- **${item.status}** — ${item.criterion}: ${item.evidence}`)
+    .join("\n");
 }
 
 function main() {
@@ -96,7 +112,9 @@ function main() {
     return;
   }
   const root = gitRoot();
-  const raw = parseJsonDocument(readFileSync(path.resolve(root, args.resultPath), "utf8"));
+  const raw = parseJsonDocument(
+    readFileSync(path.resolve(root, args.resultPath), "utf8"),
+  );
   let model;
   let verdict;
   let route;
@@ -112,23 +130,29 @@ function main() {
     verdict = `READY FOR HUMAN REVIEW${model.waivers?.length ? " WITH EXPLICIT CHECK WAIVERS" : ""}`;
     route = model.outcomes
       ? [
-        `Reviewer: **${model.outcomes.review.status}** — ${model.outcomes.review.summary}`,
-        `Tester: **${model.outcomes.test.status}** — ${model.outcomes.test.summary}`,
-        `CI: **${model.outcomes.ci.status}** — ${model.outcomes.ci.summary}`
-          + (model.outcomes.ci.runUrl ? ` — [GitHub Actions run](${model.outcomes.ci.runUrl})` : ""),
-      ].join("\n\n")
+          `Reviewer: **${model.outcomes.review.status}** — ${model.outcomes.review.summary}`,
+          `Tester: **${model.outcomes.test.status}** — ${model.outcomes.test.summary}`,
+          `CI: **${model.outcomes.ci.status}** — ${model.outcomes.ci.summary}` +
+            (model.outcomes.ci.runUrl
+              ? ` — [GitHub Actions run](${model.outcomes.ci.runUrl})`
+              : ""),
+        ].join("\n\n")
       : [
-        `Reviewer: **${model.actual.review.decision}** — ${model.actual.review.rationale}`,
-        `Tester: **${model.actual.test.decision}** — ${model.actual.test.rationale}`,
-      ].join("\n\n");
+          `Reviewer: **${model.actual.review.decision}** — ${model.actual.review.rationale}`,
+          `Tester: **${model.actual.test.decision}** — ${model.actual.test.rationale}`,
+        ].join("\n\n");
   } else {
-    model = validateGateResult(args.gate === "review" ? "reviewer" : "tester", raw, {
-      issueKey: args.issueKey,
-      repository: REPOSITORY,
-      pullRequestNumber: args.pullRequestNumber,
-      headBranch: args.headBranch,
-      baseBranch: BASE_BRANCH,
-    });
+    model = validateGateResult(
+      args.gate === "review" ? "reviewer" : "tester",
+      raw,
+      {
+        issueKey: args.issueKey,
+        repository: REPOSITORY,
+        pullRequestNumber: args.pullRequestNumber,
+        headBranch: args.headBranch,
+        baseBranch: BASE_BRANCH,
+      },
+    );
     verdict = model.verdict;
   }
   const marker = buildPullRequestCommentMarker({
@@ -148,43 +172,64 @@ function main() {
     "",
     model.summary,
     ...(route ? ["", route] : []),
-    ...(args.gate === "handoff" && model.commands.length > 0 ? [
-      "", "### Validation commands", "",
-      ...model.commands.map((item) => `- **${item.status}** — ${item.command}: ${item.summary}`),
-    ] : []),
-    ...(model.waivers?.length ? [
-      "", "### Explicit check waivers and confidence gaps", "",
-      ...waiverSummaryLines(model).map((line) => `- ${line}`),
-    ] : []),
+    ...(args.gate === "handoff" && model.commands.length > 0
+      ? [
+          "",
+          "### Validation commands",
+          "",
+          ...model.commands.map(
+            (item) => `- **${item.status}** — ${item.command}: ${item.summary}`,
+          ),
+        ]
+      : []),
+    ...(model.waivers?.length
+      ? [
+          "",
+          "### Explicit check waivers and confidence gaps",
+          "",
+          ...waiverSummaryLines(model).map((line) => `- ${line}`),
+        ]
+      : []),
     "",
     "### Acceptance",
     "",
     bulletAcceptance(model.acceptance),
-    ...(findings.length > 0 ? [
-      "",
-      `### ${model.findings ? "Findings" : "Failures"}`,
-      "",
-      ...findings.map((item) => `- **${item.id}: ${item.title}** — ${item.evidence}`),
-    ] : []),
+    ...(findings.length > 0
+      ? [
+          "",
+          `### ${model.findings ? "Findings" : "Failures"}`,
+          "",
+          ...findings.map(
+            (item) => `- **${item.id}: ${item.title}** — ${item.evidence}`,
+          ),
+        ]
+      : []),
     "",
     args.evidenceUrl
       ? `Full evidence and attachments: [Delivery evidence](${args.evidenceUrl})`
       : "Evidence is retained in local task artifacts; the acceptance and validation results are summarized above.",
   ].join("\n");
-  process.stdout.write(`${JSON.stringify({
-    status: "ready",
-    marker,
-    body,
-    evidenceUrl: args.evidenceUrl ?? null,
-    nativeUploads: [],
-    browserRequired: false,
-  }, null, 2)}\n`);
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        status: "ready",
+        marker,
+        body,
+        evidenceUrl: args.evidenceUrl ?? null,
+        nativeUploads: [],
+        browserRequired: false,
+      },
+      null,
+      2,
+    )}\n`,
+  );
 }
 
 try {
   main();
 } catch (error) {
-  const messages = error instanceof WorkflowValidationError ? error.errors : [error.message];
+  const messages =
+    error instanceof WorkflowValidationError ? error.errors : [error.message];
   process.stderr.write(`${redactText(messages.join("\n"))}\n`);
   process.exitCode = 1;
 }

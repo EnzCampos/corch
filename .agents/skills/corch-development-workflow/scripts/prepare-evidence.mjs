@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { REPOSITORY, BASE_BRANCH } from "./workflow-config.mjs";
 
-
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -67,13 +66,23 @@ function parseArguments(argv) {
   if (args.help) {
     return args;
   }
-  const missing = ["issueKey", "pullRequestNumber", "gate", "headBranch", "profile", "resultPath"]
-    .filter((field) => !args[field]);
+  const missing = [
+    "issueKey",
+    "pullRequestNumber",
+    "gate",
+    "headBranch",
+    "profile",
+    "resultPath",
+  ].filter((field) => !args[field]);
   if (missing.length > 0) {
-    throw new WorkflowValidationError([`missing arguments: ${missing.join(", ")}`]);
+    throw new WorkflowValidationError([
+      `missing arguments: ${missing.join(", ")}`,
+    ]);
   }
   if (!new Set(["review", "test", "handoff"]).has(args.gate)) {
-    throw new WorkflowValidationError(["--gate must be review, test, or handoff"]);
+    throw new WorkflowValidationError([
+      "--gate must be review, test, or handoff",
+    ]);
   }
   if (!Number.isInteger(args.pullRequestNumber) || args.pullRequestNumber < 1) {
     throw new WorkflowValidationError(["--pr must be a positive integer"]);
@@ -89,7 +98,9 @@ function gitRoot() {
     windowsHide: true,
   });
   if (result.status !== 0) {
-    throw new WorkflowValidationError(["Evidence preparation requires a Git repository"]);
+    throw new WorkflowValidationError([
+      "Evidence preparation requires a Git repository",
+    ]);
   }
   return result.stdout.trim();
 }
@@ -145,7 +156,9 @@ async function main() {
   const root = gitRoot();
   const model = publicationModel(
     args,
-    parseJsonDocument(readFileSync(path.resolve(root, args.resultPath), "utf8")),
+    parseJsonDocument(
+      readFileSync(path.resolve(root, args.resultPath), "utf8"),
+    ),
   );
   const metadata = artifactMetadata(model);
   const evidence = resolveEvidenceFiles({
@@ -158,15 +171,25 @@ async function main() {
   validateUniqueLogicalEvidenceFilenames(evidence);
   if (args.gate === "handoff") {
     if (args.profile !== model.evidenceProfile) {
-      throw new WorkflowValidationError(["handoff profile must match the gate selection"]);
+      throw new WorkflowValidationError([
+        "handoff profile must match the gate selection",
+      ]);
     }
     validateHandoffEvidence(model, evidence);
   } else {
-    validateEvidenceProfile(args.profile, evidence, { gate: args.gate, verdict: model.verdict });
+    validateEvidenceProfile(args.profile, evidence, {
+      gate: args.gate,
+      verdict: model.verdict,
+    });
   }
   const files = evidence.map((file, index) => {
-    const sha256 = createHash("sha256").update(readFileSync(file.absolutePath)).digest("hex");
-    const safeBasename = path.basename(file.suppliedPath).replace(/[^A-Za-z0-9._-]/g, "_").slice(-100);
+    const sha256 = createHash("sha256")
+      .update(readFileSync(file.absolutePath))
+      .digest("hex");
+    const safeBasename = path
+      .basename(file.suppliedPath)
+      .replace(/[^A-Za-z0-9._-]/g, "_")
+      .slice(-100);
     return {
       ...file,
       sha256,
@@ -189,19 +212,26 @@ async function main() {
     localArtifacts: preparedFiles,
     gate: args.gate,
   });
-  process.stdout.write(`${JSON.stringify({
-    status: args.dryRun ? "dry-run" : "prepared",
-    marker: model.marker,
-    result: model.schemaVersion,
-    observedSha: model.observedSha,
-    commentBody,
-    files: preparedFiles,
-    publication: { performed: false, destination: null },
-  }, null, 2)}\n`);
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        status: args.dryRun ? "dry-run" : "prepared",
+        marker: model.marker,
+        result: model.schemaVersion,
+        observedSha: model.observedSha,
+        commentBody,
+        files: preparedFiles,
+        publication: { performed: false, destination: null },
+      },
+      null,
+      2,
+    )}\n`,
+  );
 }
 
 main().catch((error) => {
-  const messages = error instanceof WorkflowValidationError ? error.errors : [error.message];
+  const messages =
+    error instanceof WorkflowValidationError ? error.errors : [error.message];
   process.stderr.write(`${redactText(messages.join("\n"))}\n`);
   process.exitCode = 1;
 });

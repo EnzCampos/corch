@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
@@ -35,15 +34,22 @@ function parseArguments(argv) {
     else if (current === "--output") args.outputPath = argv[++index];
     else throw new WorkflowValidationError([`unknown argument: ${current}`]);
   }
-  if (!args.help && (!new Set(["reviewer", "tester"]).has(args.role)
-      || !args.basePath || !args.amendmentPath)) {
-    throw new WorkflowValidationError(["--role, --base, and --amendment are required"]);
+  if (
+    !args.help &&
+    (!new Set(["reviewer", "tester"]).has(args.role) ||
+      !args.basePath ||
+      !args.amendmentPath)
+  ) {
+    throw new WorkflowValidationError([
+      "--role, --base, and --amendment are required",
+    ]);
   }
   return args;
 }
 
 function expectedOutputPath(result, role) {
-  const filename = role === "reviewer" ? "review-result.json" : "test-result.json";
+  const filename =
+    role === "reviewer" ? "review-result.json" : "test-result.json";
   return path.resolve(
     `.agents/evidence/${result.issueKey}/${result.observedSha}/${filename}`,
   );
@@ -55,7 +61,9 @@ try {
     process.stdout.write(`${usage()}\n`);
   } else {
     const base = parseJsonDocument(readFileSync(args.basePath, "utf8"));
-    const amendment = parseJsonDocument(readFileSync(args.amendmentPath, "utf8"));
+    const amendment = parseJsonDocument(
+      readFileSync(args.amendmentPath, "utf8"),
+    );
     const result = composeGateResult(args.role, base, amendment);
     const document = `${JSON.stringify(result, null, 2)}\n`;
     if (args.outputPath) {
@@ -67,13 +75,16 @@ try {
       }
       mkdirSync(path.dirname(outputPath), { recursive: true });
       writeFileSync(outputPath, document, { encoding: "utf8", flag: "wx" });
-      process.stdout.write(`${JSON.stringify({ status: "written", path: path.relative(process.cwd(), outputPath).replaceAll("\\", "/") })}\n`);
+      process.stdout.write(
+        `${JSON.stringify({ status: "written", path: path.relative(process.cwd(), outputPath).replaceAll("\\", "/") })}\n`,
+      );
     } else {
       process.stdout.write(document);
     }
   }
 } catch (error) {
-  const messages = error instanceof WorkflowValidationError ? error.errors : [error.message];
+  const messages =
+    error instanceof WorkflowValidationError ? error.errors : [error.message];
   process.stderr.write(`${redactText(messages.join("\n"))}\n`);
   process.exitCode = 1;
 }

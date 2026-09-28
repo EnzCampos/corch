@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { REPOSITORY, BASE_BRANCH } from "./workflow-config.mjs";
 
-
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -51,10 +50,16 @@ function parseArguments(argv) {
   if (args.help) {
     return args;
   }
-  const missing = ["issueKey", "pullRequestNumber", "headBranch", "selectionPath"]
-    .filter((field) => !args[field]);
+  const missing = [
+    "issueKey",
+    "pullRequestNumber",
+    "headBranch",
+    "selectionPath",
+  ].filter((field) => !args[field]);
   if (missing.length > 0) {
-    throw new WorkflowValidationError([`missing arguments: ${missing.join(", ")}`]);
+    throw new WorkflowValidationError([
+      `missing arguments: ${missing.join(", ")}`,
+    ]);
   }
   return args;
 }
@@ -67,7 +72,9 @@ function gitRoot() {
     windowsHide: true,
   });
   if (result.status !== 0) {
-    throw new WorkflowValidationError(["gate selection validation requires a Git repository"]);
+    throw new WorkflowValidationError([
+      "gate selection validation requires a Git repository",
+    ]);
   }
   return result.stdout.trim();
 }
@@ -80,7 +87,9 @@ function main() {
   }
   const root = gitRoot();
   const selection = validateGateSelection(
-    parseJsonDocument(readFileSync(path.resolve(root, args.selectionPath), "utf8")),
+    parseJsonDocument(
+      readFileSync(path.resolve(root, args.selectionPath), "utf8"),
+    ),
     {
       issueKey: args.issueKey,
       repository: REPOSITORY,
@@ -100,29 +109,36 @@ function main() {
   if (selection.actual.test.decision === "skipped") {
     validateHandoffEvidence(selection, evidence);
   }
-  process.stdout.write(`${JSON.stringify({
-    status: "valid",
-    issueKey: selection.issueKey,
-    pullRequestNumber: selection.pullRequest.number,
-    observedSha: selection.observedSha,
-    review: selection.actual.review.decision,
-    test: selection.actual.test.decision,
-    artifacts: evidence.map((item) => item.suppliedPath),
-    marker: buildGateSelectionMarker({
-      issueKey: selection.issueKey,
-      pullRequestNumber: selection.pullRequest.number,
-      observedSha: selection.observedSha,
-      review: selection.actual.review.decision,
-      test: selection.actual.test.decision,
-      waivers: selection.waivers,
-    }),
-  }, null, 2)}\n`);
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        status: "valid",
+        issueKey: selection.issueKey,
+        pullRequestNumber: selection.pullRequest.number,
+        observedSha: selection.observedSha,
+        review: selection.actual.review.decision,
+        test: selection.actual.test.decision,
+        artifacts: evidence.map((item) => item.suppliedPath),
+        marker: buildGateSelectionMarker({
+          issueKey: selection.issueKey,
+          pullRequestNumber: selection.pullRequest.number,
+          observedSha: selection.observedSha,
+          review: selection.actual.review.decision,
+          test: selection.actual.test.decision,
+          waivers: selection.waivers,
+        }),
+      },
+      null,
+      2,
+    )}\n`,
+  );
 }
 
 try {
   main();
 } catch (error) {
-  const messages = error instanceof WorkflowValidationError ? error.errors : [error.message];
+  const messages =
+    error instanceof WorkflowValidationError ? error.errors : [error.message];
   process.stderr.write(`${redactText(messages.join("\n"))}\n`);
   process.exitCode = 1;
 }

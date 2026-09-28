@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { ISSUE_PATTERN } from "./workflow-config.mjs";
 
-
 import {
   existsSync,
   lstatSync,
@@ -115,61 +114,123 @@ function parseArguments(argv) {
   if (args.help) {
     return args;
   }
-  if (!new Set(["show", "register-task", "record-route", "record-context", "record-plan", "record-event", "record-gate", "begin-gate", "end-gate", "retire-task"]).has(args.command)) {
-    throw new WorkflowValidationError(["select show, register-task, record-route, record-context, record-plan, record-event, record-gate, begin-gate, end-gate, or retire-task"]);
+  if (
+    !new Set([
+      "show",
+      "register-task",
+      "record-route",
+      "record-context",
+      "record-plan",
+      "record-event",
+      "record-gate",
+      "begin-gate",
+      "end-gate",
+      "retire-task",
+    ]).has(args.command)
+  ) {
+    throw new WorkflowValidationError([
+      "select show, register-task, record-route, record-context, record-plan, record-event, record-gate, begin-gate, end-gate, or retire-task",
+    ]);
   }
   if (!ISSUE_PATTERN.test(args.issueKey ?? "")) {
-    throw new WorkflowValidationError(["--issue must match the configured issue prefix and a positive number"]);
+    throw new WorkflowValidationError([
+      "--issue must match the configured issue prefix and a positive number",
+    ]);
   }
   if (new Set(["register-task", "retire-task"]).has(args.command)) {
     if (!ROLE_PATTERN.test(args.role ?? "") || !args.threadId) {
-      throw new WorkflowValidationError(["task operations require --role and --thread"]);
+      throw new WorkflowValidationError([
+        "task operations require --role and --thread",
+      ]);
     }
   }
-  if (args.command === "record-route" && (!args.classification || !args.rationale)) {
-    throw new WorkflowValidationError(["record-route requires --classification and --rationale"]);
+  if (
+    args.command === "record-route" &&
+    (!args.classification || !args.rationale)
+  ) {
+    throw new WorkflowValidationError([
+      "record-route requires --classification and --rationale",
+    ]);
   }
-  if (args.command === "record-context"
-      && (!Number.isInteger(args.contextRevision)
-        || args.contextRevision < 1
-        || args.contextPath !== `.agents/task-context/${args.issueKey}.md`)) {
-    throw new WorkflowValidationError(["record-context requires a positive --revision and the issue task-context --path"]);
+  if (
+    args.command === "record-context" &&
+    (!Number.isInteger(args.contextRevision) ||
+      args.contextRevision < 1 ||
+      args.contextPath !== `.agents/task-context/${args.issueKey}.md`)
+  ) {
+    throw new WorkflowValidationError([
+      "record-context requires a positive --revision and the issue task-context --path",
+    ]);
   }
-  if (args.kind !== undefined
-      && (args.command !== "register-task" || args.role !== "planner"
-        || args.kind !== "task")) {
-    throw new WorkflowValidationError(["--kind task applies only to Planner registration"]);
+  if (
+    args.kind !== undefined &&
+    (args.command !== "register-task" ||
+      args.role !== "planner" ||
+      args.kind !== "task")
+  ) {
+    throw new WorkflowValidationError([
+      "--kind task applies only to Planner registration",
+    ]);
   }
-  if (args.command === "register-task" && args.role === "planner" && args.kind !== "task") {
-    throw new WorkflowValidationError(["Planner registration requires --kind task"]);
+  if (
+    args.command === "register-task" &&
+    args.role === "planner" &&
+    args.kind !== "task"
+  ) {
+    throw new WorkflowValidationError([
+      "Planner registration requires --kind task",
+    ]);
   }
-  if (args.command === "record-plan"
-      && args.planPath !== `.agents/task-state/${args.issueKey}-plan.md`) {
-    throw new WorkflowValidationError(["record-plan requires the issue-local ignored plan --path"]);
+  if (
+    args.command === "record-plan" &&
+    args.planPath !== `.agents/task-state/${args.issueKey}-plan.md`
+  ) {
+    throw new WorkflowValidationError([
+      "record-plan requires the issue-local ignored plan --path",
+    ]);
   }
-  if (args.command === "record-event" && (!EVENT_PATTERN.test(args.eventKey ?? "") || !args.targetThreadId)) {
-    throw new WorkflowValidationError(["record-event requires a stable --event and --target"]);
+  if (
+    args.command === "record-event" &&
+    (!EVENT_PATTERN.test(args.eventKey ?? "") || !args.targetThreadId)
+  ) {
+    throw new WorkflowValidationError([
+      "record-event requires a stable --event and --target",
+    ]);
   }
   if (args.command === "record-gate") {
-    if (!new Set(["review", "test"]).has(args.gate)
-        || !SHA_PATTERN.test(args.observedSha ?? "")
-        || !args.resultPath) {
-      throw new WorkflowValidationError(["record-gate requires --gate, --sha, and --result"]);
+    if (
+      !new Set(["review", "test"]).has(args.gate) ||
+      !SHA_PATTERN.test(args.observedSha ?? "") ||
+      !args.resultPath
+    ) {
+      throw new WorkflowValidationError([
+        "record-gate requires --gate, --sha, and --result",
+      ]);
     }
   }
-  if (new Set(["begin-gate", "end-gate"]).has(args.command)
-      && (!new Set(["review", "test"]).has(args.gate) || !args.threadId)) {
-    throw new WorkflowValidationError(["checkout gate operations require --gate and --thread"]);
+  if (
+    new Set(["begin-gate", "end-gate"]).has(args.command) &&
+    (!new Set(["review", "test"]).has(args.gate) || !args.threadId)
+  ) {
+    throw new WorkflowValidationError([
+      "checkout gate operations require --gate and --thread",
+    ]);
   }
-  if (args.command === "begin-gate"
-      && (!SHA_PATTERN.test(args.observedSha ?? "") || !args.worktree)) {
-    throw new WorkflowValidationError(["begin-gate requires --worktree and --sha"]);
+  if (
+    args.command === "begin-gate" &&
+    (!SHA_PATTERN.test(args.observedSha ?? "") || !args.worktree)
+  ) {
+    throw new WorkflowValidationError([
+      "begin-gate requires --worktree and --sha",
+    ]);
   }
   if (args.worktree !== undefined && !path.isAbsolute(args.worktree)) {
     throw new WorkflowValidationError(["--worktree must be absolute"]);
   }
-  if (args.pullRequestNumber !== undefined
-      && (!Number.isInteger(args.pullRequestNumber) || args.pullRequestNumber < 1)) {
+  if (
+    args.pullRequestNumber !== undefined &&
+    (!Number.isInteger(args.pullRequestNumber) || args.pullRequestNumber < 1)
+  ) {
     throw new WorkflowValidationError(["--pr must be a positive integer"]);
   }
   return args;
@@ -189,35 +250,54 @@ function repositoryRoot() {
 }
 
 function taskStateRoot(checkoutRoot) {
-  const result = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
-    cwd: checkoutRoot,
-    encoding: "utf8",
-    shell: false,
-    windowsHide: true,
-  });
+  const result = spawnSync(
+    "git",
+    ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    {
+      cwd: checkoutRoot,
+      encoding: "utf8",
+      shell: false,
+      windowsHide: true,
+    },
+  );
   if (result.status !== 0) {
-    throw new WorkflowValidationError(["task-state cannot resolve the shared Git directory"]);
+    throw new WorkflowValidationError([
+      "task-state cannot resolve the shared Git directory",
+    ]);
   }
   return path.dirname(path.resolve(checkoutRoot, result.stdout.trim()));
 }
 
 function isLinkedWorktree(checkoutRoot) {
-  const gitDirectory = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-dir"], {
-    cwd: checkoutRoot,
-    encoding: "utf8",
-    shell: false,
-    windowsHide: true,
-  });
-  const commonDirectory = spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], {
-    cwd: checkoutRoot,
-    encoding: "utf8",
-    shell: false,
-    windowsHide: true,
-  });
+  const gitDirectory = spawnSync(
+    "git",
+    ["rev-parse", "--path-format=absolute", "--git-dir"],
+    {
+      cwd: checkoutRoot,
+      encoding: "utf8",
+      shell: false,
+      windowsHide: true,
+    },
+  );
+  const commonDirectory = spawnSync(
+    "git",
+    ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    {
+      cwd: checkoutRoot,
+      encoding: "utf8",
+      shell: false,
+      windowsHide: true,
+    },
+  );
   if (gitDirectory.status !== 0 || commonDirectory.status !== 0) {
-    throw new WorkflowValidationError(["task-state cannot resolve worktree identity"]);
+    throw new WorkflowValidationError([
+      "task-state cannot resolve worktree identity",
+    ]);
   }
-  return path.resolve(gitDirectory.stdout.trim()) !== path.resolve(commonDirectory.stdout.trim());
+  return (
+    path.resolve(gitDirectory.stdout.trim()) !==
+    path.resolve(commonDirectory.stdout.trim())
+  );
 }
 
 function emptyState(issueKey) {
@@ -232,9 +312,13 @@ function emptyState(issueKey) {
 }
 
 function validateState(value, issueKey) {
-  if (value.schemaVersion !== TASK_STATE_SCHEMA
-      || value.issueKey !== issueKey) {
-    throw new WorkflowValidationError(["task-state schema or issue identity is invalid"]);
+  if (
+    value.schemaVersion !== TASK_STATE_SCHEMA ||
+    value.issueKey !== issueKey
+  ) {
+    throw new WorkflowValidationError([
+      "task-state schema or issue identity is invalid",
+    ]);
   }
   if (!value.tasks || !value.gates || !value.deliveredEvents) {
     throw new WorkflowValidationError(["task-state is incomplete"]);
@@ -246,10 +330,14 @@ function validateState(value, issueKey) {
     validatePlanReference(value.implementationPlan, issueKey);
   }
   if (value.tasks.planner && value.tasks.planner.kind !== "task") {
-    throw new WorkflowValidationError(["Planner identity must be a visible task"]);
+    throw new WorkflowValidationError([
+      "Planner identity must be a visible task",
+    ]);
   }
   if (value.workflowProtocol !== WORKFLOW_PROTOCOL) {
-    throw new WorkflowValidationError(["task-state workflow protocol is invalid"]);
+    throw new WorkflowValidationError([
+      "task-state workflow protocol is invalid",
+    ]);
   }
   return value;
 }
@@ -261,7 +349,9 @@ function stateLocation(root, issueKey) {
   }
   const stat = lstatSync(directory);
   if (!stat.isDirectory() || stat.isSymbolicLink()) {
-    throw new WorkflowValidationError([".agents/task-state must be a real directory"]);
+    throw new WorkflowValidationError([
+      ".agents/task-state must be a real directory",
+    ]);
   }
   return path.join(directory, `${issueKey}.json`);
 }
@@ -272,15 +362,23 @@ function readState(targetPath, issueKey) {
   }
   const stat = lstatSync(targetPath);
   if (!stat.isFile() || stat.isSymbolicLink()) {
-    throw new WorkflowValidationError(["task-state target must be a regular file"]);
+    throw new WorkflowValidationError([
+      "task-state target must be a regular file",
+    ]);
   }
-  return validateState(parseJsonDocument(readFileSync(targetPath, "utf8")), issueKey);
+  return validateState(
+    parseJsonDocument(readFileSync(targetPath, "utf8")),
+    issueKey,
+  );
 }
 
 function writeState(targetPath, value) {
   const temporaryPath = `${targetPath}.${process.pid}.${Date.now()}.tmp`;
   try {
-    writeFileSync(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+    writeFileSync(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, {
+      encoding: "utf8",
+      flag: "wx",
+    });
     renameSync(temporaryPath, targetPath);
   } finally {
     if (existsSync(temporaryPath)) {
@@ -299,8 +397,16 @@ function main() {
   const sharedRoot = taskStateRoot(checkoutRoot);
   const localRoot = isLinkedWorktree(checkoutRoot) ? checkoutRoot : sharedRoot;
   const targetPath = stateLocation(localRoot, args.issueKey);
-  const sharedPath = path.join(sharedRoot, ".agents", "task-state", `${args.issueKey}.json`);
-  const sourcePath = existsSync(targetPath) || targetPath === sharedPath ? targetPath : sharedPath;
+  const sharedPath = path.join(
+    sharedRoot,
+    ".agents",
+    "task-state",
+    `${args.issueKey}.json`,
+  );
+  const sourcePath =
+    existsSync(targetPath) || targetPath === sharedPath
+      ? targetPath
+      : sharedPath;
   const state = readState(sourcePath, args.issueKey);
   if (args.command === "show") {
     process.stdout.write(`${JSON.stringify(state, null, 2)}\n`);
@@ -314,19 +420,31 @@ function main() {
       ...(args.hostId ? { hostId: args.hostId } : {}),
       ...(args.worktree ? { worktree: path.resolve(args.worktree) } : {}),
       ...(args.branch ? { branch: args.branch } : {}),
-      ...(args.pullRequestNumber ? { pullRequestNumber: args.pullRequestNumber } : {}),
+      ...(args.pullRequestNumber
+        ? { pullRequestNumber: args.pullRequestNumber }
+        : {}),
       retired: false,
     };
     const existing = state.tasks[args.role];
     const planner = state.tasks.planner;
-    if (args.role === "worker" && planner?.kind === "task" && !planner.retired
-        && (!planner.worktree || !args.worktree
-          || path.resolve(planner.worktree) !== path.resolve(args.worktree)
-          || !planner.branch || planner.branch !== args.branch)) {
-      throw new WorkflowValidationError(["Worker must share the visible Planner worktree and branch"]);
+    if (
+      args.role === "worker" &&
+      planner?.kind === "task" &&
+      !planner.retired &&
+      (!planner.worktree ||
+        !args.worktree ||
+        path.resolve(planner.worktree) !== path.resolve(args.worktree) ||
+        !planner.branch ||
+        planner.branch !== args.branch)
+    ) {
+      throw new WorkflowValidationError([
+        "Worker must share the visible Planner worktree and branch",
+      ]);
     }
     if (existing && existing.threadId !== args.threadId && !existing.retired) {
-      throw new WorkflowValidationError([`${args.role} is already registered to another active task`]);
+      throw new WorkflowValidationError([
+        `${args.role} is already registered to another active task`,
+      ]);
     }
     if (existing && JSON.stringify(existing) === JSON.stringify(next)) {
       status = "already-recorded";
@@ -338,48 +456,79 @@ function main() {
     if (JSON.stringify(state.executionRoute) === JSON.stringify(next)) {
       status = "already-recorded";
     } else if (state.executionRoute) {
-      throw new WorkflowValidationError(["execution route is already recorded with a different identity"]);
+      throw new WorkflowValidationError([
+        "execution route is already recorded with a different identity",
+      ]);
     } else {
       state.executionRoute = next;
     }
   } else if (args.command === "record-context") {
-    const next = { materialRevision: args.contextRevision, sharedPath: args.contextPath };
+    const next = {
+      materialRevision: args.contextRevision,
+      sharedPath: args.contextPath,
+    };
     if (JSON.stringify(state.context) === JSON.stringify(next)) {
       status = "already-recorded";
-    } else if (state.context && args.contextRevision <= state.context.materialRevision) {
-      throw new WorkflowValidationError(["material context revision must increase"]);
+    } else if (
+      state.context &&
+      args.contextRevision <= state.context.materialRevision
+    ) {
+      throw new WorkflowValidationError([
+        "material context revision must increase",
+      ]);
     } else {
       state.context = next;
     }
   } else if (args.command === "record-plan") {
     const planPath = path.join(checkoutRoot, args.planPath);
     if (!existsSync(planPath)) {
-      throw new WorkflowValidationError(["implementation plan file does not exist"]);
+      throw new WorkflowValidationError([
+        "implementation plan file does not exist",
+      ]);
     }
     const planStat = lstatSync(planPath);
     if (!planStat.isFile() || planStat.isSymbolicLink()) {
-      throw new WorkflowValidationError(["implementation plan path must be a regular file"]);
+      throw new WorkflowValidationError([
+        "implementation plan path must be a regular file",
+      ]);
     }
     const content = readFileSync(planPath, "utf8");
-    if (!new RegExp(`^# ${args.issueKey}(?:[ \\t]+[^\\r\\n]*)?\\r?\\n\\s*\\S`, "u").test(content)) {
-      throw new WorkflowValidationError(["Markdown plan must start with its issue heading and contain a body"]);
+    if (
+      !new RegExp(
+        `^# ${args.issueKey}(?:[ \\t]+[^\\r\\n]*)?\\r?\\n\\s*\\S`,
+        "u",
+      ).test(content)
+    ) {
+      throw new WorkflowValidationError([
+        "Markdown plan must start with its issue heading and contain a body",
+      ]);
     }
-    const next = validatePlanReference({
-      schemaVersion: MARKDOWN_PLAN_SCHEMA,
-      path: args.planPath,
-      revision: args.contextRevision,
-    }, args.issueKey);
+    const next = validatePlanReference(
+      {
+        schemaVersion: MARKDOWN_PLAN_SCHEMA,
+        path: args.planPath,
+        revision: args.contextRevision,
+      },
+      args.issueKey,
+    );
     if (JSON.stringify(state.implementationPlan) === JSON.stringify(next)) {
       status = "already-recorded";
-    } else if (state.implementationPlan && next.revision <= state.implementationPlan.revision) {
-      throw new WorkflowValidationError(["implementation plan revision must increase"]);
+    } else if (
+      state.implementationPlan &&
+      next.revision <= state.implementationPlan.revision
+    ) {
+      throw new WorkflowValidationError([
+        "implementation plan revision must increase",
+      ]);
     } else {
       state.implementationPlan = next;
     }
   } else if (args.command === "record-event") {
     const existing = state.deliveredEvents[args.eventKey];
     if (existing && existing !== args.targetThreadId) {
-      throw new WorkflowValidationError(["event key is already recorded for another target"]);
+      throw new WorkflowValidationError([
+        "event key is already recorded for another target",
+      ]);
     }
     if (existing === args.targetThreadId) {
       status = "already-recorded";
@@ -399,15 +548,23 @@ function main() {
     const workerTask = state.tasks.worker;
     const roleTask = state.tasks[role];
     if (!workerTask || workerTask.retired || !workerTask.worktree) {
-      throw new WorkflowValidationError(["an active Worker with a registered worktree is required"]);
+      throw new WorkflowValidationError([
+        "an active Worker with a registered worktree is required",
+      ]);
     }
     if (!roleTask || roleTask.retired || roleTask.threadId !== args.threadId) {
-      throw new WorkflowValidationError([`${role} task identity is not actively registered`]);
+      throw new WorkflowValidationError([
+        `${role} task identity is not actively registered`,
+      ]);
     }
-    if (path.resolve(workerTask.worktree) !== worktree
-        || !roleTask.worktree
-        || path.resolve(roleTask.worktree) !== worktree) {
-      throw new WorkflowValidationError(["gate task must use the Worker's registered worktree"]);
+    if (
+      path.resolve(workerTask.worktree) !== worktree ||
+      !roleTask.worktree ||
+      path.resolve(roleTask.worktree) !== worktree
+    ) {
+      throw new WorkflowValidationError([
+        "gate task must use the Worker's registered worktree",
+      ]);
     }
     const next = {
       gate: args.gate,
@@ -420,7 +577,9 @@ function main() {
       if (JSON.stringify(state.activeCheckoutGate) === JSON.stringify(next)) {
         status = "already-recorded";
       } else {
-        throw new WorkflowValidationError(["another checkout gate is already active"]);
+        throw new WorkflowValidationError([
+          "another checkout gate is already active",
+        ]);
       }
     } else {
       state.activeCheckoutGate = next;
@@ -430,14 +589,18 @@ function main() {
     if (!active) {
       status = "already-recorded";
     } else if (active.gate !== args.gate || active.threadId !== args.threadId) {
-      throw new WorkflowValidationError(["checkout gate release identity does not match the active lease"]);
+      throw new WorkflowValidationError([
+        "checkout gate release identity does not match the active lease",
+      ]);
     } else {
       delete state.activeCheckoutGate;
     }
   } else if (args.command === "retire-task") {
     const existing = state.tasks[args.role];
     if (!existing || existing.threadId !== args.threadId) {
-      throw new WorkflowValidationError(["retirement identity does not match the registered task"]);
+      throw new WorkflowValidationError([
+        "retirement identity does not match the registered task",
+      ]);
     }
     if (existing.retired) {
       status = "already-recorded";
@@ -448,13 +611,16 @@ function main() {
   if (status !== "already-recorded") {
     writeState(targetPath, state);
   }
-  process.stdout.write(`${JSON.stringify({ status, issueKey: args.issueKey }, null, 2)}\n`);
+  process.stdout.write(
+    `${JSON.stringify({ status, issueKey: args.issueKey }, null, 2)}\n`,
+  );
 }
 
 try {
   main();
 } catch (error) {
-  const messages = error instanceof WorkflowValidationError ? error.errors : [error.message];
+  const messages =
+    error instanceof WorkflowValidationError ? error.errors : [error.message];
   process.stderr.write(`${redactText(messages.join("\n"))}\n`);
   process.exitCode = 1;
 }

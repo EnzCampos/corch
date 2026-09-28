@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-
 import { spawnSync } from "node:child_process";
 
 import { WorkflowValidationError, redactText } from "./workflow-lib.mjs";
@@ -51,7 +50,10 @@ function parseArguments(argv) {
   if (!new Set(["review", "test"]).has(args.role)) {
     errors.push("--role must be review or test");
   }
-  if (!SHA_PATTERN.test(args.fromSha ?? "") || !SHA_PATTERN.test(args.toSha ?? "")) {
+  if (
+    !SHA_PATTERN.test(args.fromSha ?? "") ||
+    !SHA_PATTERN.test(args.toSha ?? "")
+  ) {
     errors.push("--from and --to must be lowercase full SHAs");
   }
   if (!new Set(["irrelevant", "affected", "material"]).has(args.impact)) {
@@ -77,7 +79,9 @@ function git(args, { allowStatus } = {}) {
     return result;
   }
   if (result.status !== 0) {
-    throw new WorkflowValidationError([redactText(result.stderr.trim() || `git ${args[0]} failed`)]);
+    throw new WorkflowValidationError([
+      redactText(result.stderr.trim() || `git ${args[0]} failed`),
+    ]);
   }
   return result.stdout.trim();
 }
@@ -94,24 +98,36 @@ function main() {
   const sameCommit = args.fromSha === args.toSha;
   const ancestry = sameCommit
     ? { status: 0 }
-    : git(["merge-base", "--is-ancestor", args.fromSha, args.toSha], { allowStatus: true });
+    : git(["merge-base", "--is-ancestor", args.fromSha, args.toSha], {
+        allowStatus: true,
+      });
   const descendant = ancestry.status === 0;
   const rewrittenHistory = !descendant;
   const changedFiles = sameCommit
     ? []
-    : git(["diff", "--name-only", "--diff-filter=ACMRD", args.fromSha, args.toSha, "--"])
-      .split(/\r?\n/).filter(Boolean);
+    : git([
+        "diff",
+        "--name-only",
+        "--diff-filter=ACMRD",
+        args.fromSha,
+        args.toSha,
+        "--",
+      ])
+        .split(/\r?\n/)
+        .filter(Boolean);
   const statistics = sameCommit
     ? []
     : git(["diff", "--numstat", args.fromSha, args.toSha, "--"])
-      .split(/\r?\n/).filter(Boolean).map((line) => {
-        const [additions, deletions, ...fileParts] = line.split("\t");
-        return {
-          path: fileParts.join("\t"),
-          additions: additions === "-" ? null : Number(additions),
-          deletions: deletions === "-" ? null : Number(deletions),
-        };
-      });
+        .split(/\r?\n/)
+        .filter(Boolean)
+        .map((line) => {
+          const [additions, deletions, ...fileParts] = line.split("\t");
+          return {
+            path: fileParts.join("\t"),
+            additions: additions === "-" ? null : Number(additions),
+            deletions: deletions === "-" ? null : Number(deletions),
+          };
+        });
   let action;
   if (sameCommit || (descendant && args.impact === "irrelevant")) {
     action = "carry-forward";
@@ -120,30 +136,40 @@ function main() {
   } else {
     action = "targeted-delta";
   }
-  process.stdout.write(`${JSON.stringify({
-    schemaVersion: "gate-delta-assessment/v1",
-    status: "assessed",
-    role: args.role,
-    fromSha: args.fromSha,
-    toSha: args.toSha,
-    comparisonRange: `${args.fromSha}..${args.toSha}`,
-    descendant,
-    rewrittenHistory,
-    impact: args.impact,
-    rationale: args.rationale.trim(),
-    action,
-    changedFiles,
-    statistics,
-    acceptanceFocus: args.acceptanceFocus.filter(Boolean),
-    priorFindingIds: [...new Set(args.priorFindingIds.filter(Boolean))],
-    requestedResult: action === "targeted-delta" ? `${args.role}-amendment/v1` : `${args.role}-result/v2`,
-  }, null, 2)}\n`);
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        schemaVersion: "gate-delta-assessment/v1",
+        status: "assessed",
+        role: args.role,
+        fromSha: args.fromSha,
+        toSha: args.toSha,
+        comparisonRange: `${args.fromSha}..${args.toSha}`,
+        descendant,
+        rewrittenHistory,
+        impact: args.impact,
+        rationale: args.rationale.trim(),
+        action,
+        changedFiles,
+        statistics,
+        acceptanceFocus: args.acceptanceFocus.filter(Boolean),
+        priorFindingIds: [...new Set(args.priorFindingIds.filter(Boolean))],
+        requestedResult:
+          action === "targeted-delta"
+            ? `${args.role}-amendment/v1`
+            : `${args.role}-result/v2`,
+      },
+      null,
+      2,
+    )}\n`,
+  );
 }
 
 try {
   main();
 } catch (error) {
-  const messages = error instanceof WorkflowValidationError ? error.errors : [error.message];
+  const messages =
+    error instanceof WorkflowValidationError ? error.errors : [error.message];
   process.stderr.write(`${redactText(messages.join("\n"))}\n`);
   process.exitCode = 1;
 }

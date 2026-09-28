@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-
 import {
   EXECUTION_ROUTE_RISK_SIGNALS,
   WorkflowValidationError,
@@ -68,7 +67,8 @@ function main() {
 try {
   main();
 } catch (error) {
-  const messages = error instanceof WorkflowValidationError ? error.errors : [error.message];
+  const messages =
+    error instanceof WorkflowValidationError ? error.errors : [error.message];
   process.stderr.write(`${redactText(messages.join("\n"))}\n`);
   process.exitCode = 1;
 }

@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-
 import { readFileSync } from "node:fs";
 
 import {
@@ -30,21 +29,37 @@ try {
     const args = process.argv.slice(2);
     const options = {};
     for (let index = 0; index < args.length; index += 2) {
-      const key = { "--role": "role", "--coordinator": "coordinator", "--plan-revision": "planRevision" }[args[index]];
+      const key = {
+        "--role": "role",
+        "--coordinator": "coordinator",
+        "--plan-revision": "planRevision",
+      }[args[index]];
       if (!key || !args[index + 1] || args[index + 1].startsWith("--")) {
-        throw new WorkflowValidationError([`unknown or incomplete argument: ${args[index]}`]);
+        throw new WorkflowValidationError([
+          `unknown or incomplete argument: ${args[index]}`,
+        ]);
       }
-      options[key] = key === "planRevision" ? Number(args[index + 1]) : args[index + 1];
+      options[key] =
+        key === "planRevision" ? Number(args[index + 1]) : args[index + 1];
     }
-    const value = validateWorkerBootstrap(parseJsonDocument(readFileSync(0, "utf8")));
-    process.stdout.write(`${JSON.stringify({
-      schemaVersion: value.schemaVersion,
-      issueKey: value.issue.key,
-      ...buildDeliveryTaskDispatch(value, options),
-    }, null, 2)}\n`);
+    const value = validateWorkerBootstrap(
+      parseJsonDocument(readFileSync(0, "utf8")),
+    );
+    process.stdout.write(
+      `${JSON.stringify(
+        {
+          schemaVersion: value.schemaVersion,
+          issueKey: value.issue.key,
+          ...buildDeliveryTaskDispatch(value, options),
+        },
+        null,
+        2,
+      )}\n`,
+    );
   }
 } catch (error) {
-  const messages = error instanceof WorkflowValidationError ? error.errors : [error.message];
+  const messages =
+    error instanceof WorkflowValidationError ? error.errors : [error.message];
   process.stderr.write(`${redactText(messages.join("\n"))}\n`);
   process.exitCode = 1;
 }

@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-
 import {
   WorkflowValidationError,
   assessDeliveryPreflight,
@@ -37,12 +36,15 @@ async function main() {
   if (args.length > 0) {
     throw new WorkflowValidationError([`unknown argument: ${args[0]}`]);
   }
-  const result = assessDeliveryPreflight(parseJsonDocument(await readStandardInput()));
+  const result = assessDeliveryPreflight(
+    parseJsonDocument(await readStandardInput()),
+  );
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 
 main().catch((error) => {
-  const messages = error instanceof WorkflowValidationError ? error.errors : [error.message];
+  const messages =
+    error instanceof WorkflowValidationError ? error.errors : [error.message];
   process.stderr.write(`${redactText(messages.join("\n"))}\n`);
   process.exitCode = 1;
 });
