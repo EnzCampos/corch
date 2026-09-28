@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .agents/skills/corch-development-workflow/scripts/workflow-hook.mjs session-start",
+            "timeout": 30,
+            "statusMessage": "Reading Corch checkout context"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .agents/skills/corch-development-workflow/scripts/workflow-hook.mjs user-prompt-submit",
+            "timeout": 600,
+            "statusMessage": "Preparing the Planner branch, context and dependencies"
+          }
+        ]
+      }
+    ]
+  }
+}

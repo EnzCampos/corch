@@ -1,0 +1,6 @@
+interface:
+  display_name: "Corch Delivery Router"
+  short_description: "Route Corch work to the exact delivery role"
+  default_prompt: "Use $corch-development-workflow to route this Corch implementation request."
+policy:
+  allow_implicit_invocation: true

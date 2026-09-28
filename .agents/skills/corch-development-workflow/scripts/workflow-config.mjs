@@ -1,0 +1,44 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+export function validateConfig(value) {
+  const fail = (message) => { throw new Error(`Invalid Corch configuration: ${message}`); };
+  if (!value || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value.repository ?? "")) fail("repository must be owner/name");
+  if (!/^[A-Z][A-Z0-9]*$/.test(value.issuePrefix ?? "")) fail("issuePrefix must be an uppercase project key");
+  if (typeof value.baseBranch !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value.baseBranch)
+      || value.baseBranch.includes("..") || value.baseBranch.includes("//") || value.baseBranch.endsWith("/")
+      || value.baseBranch.endsWith(".") || value.baseBranch.split("/").some((part) => part.startsWith(".") || part.endsWith(".lock"))) fail("baseBranch must be a Git branch name");
+  if (typeof value.localCiCommand !== "string" || !value.localCiCommand.trim() || /[\r\n]/.test(value.localCiCommand)) fail("localCiCommand must be a single command label");
+  if (!Array.isArray(value.setup?.steps)) fail("setup.steps must be an array");
+  const names = new Set();
+  for (const step of value.setup.steps) {
+    if (!/^[a-z][a-z0-9-]*$/.test(step.name ?? "") || names.has(step.name)) fail("setup step names must be unique lowercase identifiers");
+    names.add(step.name);
+    if (typeof step.command !== "string" || !step.command || /[\r\n\0]/.test(step.command)) fail("setup command must be an executable");
+    if (!Array.isArray(step.args) || step.args.some((arg) => typeof arg !== "string" || /[\r\n\0]/.test(arg))) fail("setup args must be separate strings");
+    for (const field of ["inputs", "outputs"]) {
+      if (!Array.isArray(step[field]) || step[field].some((entry) => typeof entry !== "string" || !entry || /[\\:\0]/.test(entry) || path.posix.isAbsolute(entry) || entry.split("/").some((part) => !part || part === "." || part === ".."))) fail(`${step.name}.${field} must contain repository-relative paths`);
+    }
+  }
+  return value;
+}
+
+export function readConfig(configPath = process.env.CORCH_CONFIG || fileURLToPath(new URL("../../../workflow.json", import.meta.url))) {
+  return validateConfig(JSON.parse(readFileSync(configPath, "utf8")));
+}
+
+export const CONFIG = readConfig();
+export const REPOSITORY = CONFIG.repository;
+export const REMOTE_URL = `https://github.com/${REPOSITORY}.git`;
+export const BASE_BRANCH = CONFIG.baseBranch;
+export const ISSUE_PREFIX = CONFIG.issuePrefix;
+export const LOCAL_CI_COMMAND = CONFIG.localCiCommand;
+export const ISSUE_PATTERN = new RegExp(`^${ISSUE_PREFIX}-([1-9]\\d*)$`);
+export const BRANCH_PATTERN = new RegExp(`^codex/${ISSUE_PREFIX.toLowerCase()}-([1-9]\\d*)-[a-z0-9]+(?:-[a-z0-9]+)*$`);
+export function issueFromBranch(branch) {
+  const match = BRANCH_PATTERN.exec(branch ?? "");
+  return match ? `${ISSUE_PREFIX}-${match[1]}` : undefined;
+}
+export const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+export const CI_RUN_PATTERN = new RegExp(`^https://github\\.com/${escapeRegExp(REPOSITORY)}/actions/runs/[1-9]\\d*$`);
