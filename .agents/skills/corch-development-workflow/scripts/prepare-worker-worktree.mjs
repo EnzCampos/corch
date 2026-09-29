@@ -39,10 +39,10 @@ export function run(command, args, options = {}) {
       ...options,
     });
   }
-  // These are fixed Corepack tokens, not paths or user input. Quoting each
-  // token makes cmd.exe treat the first quote as part of the command name.
+  // Only simple tokens reach cmd.exe, including colon-bearing script names.
+  // Quoting each token makes it treat the first quote as part of the command name.
   const values = [command, ...args];
-  if (values.some((value) => !/^[a-zA-Z0-9@._/-]+$/u.test(value))) {
+  if (values.some((value) => !/^[a-zA-Z0-9@._/:-]+$/u.test(value))) {
     throw new Error("Unsupported Corepack argument");
   }
   return spawnSync("cmd.exe", ["/d", "/s", "/c", values.join(" ")], {
@@ -149,7 +149,7 @@ export function runSetupCommand(
     new Set(["corepack", "npm", "pnpm"]).has(command)
   ) {
     if (
-      [command, ...args].some((value) => !/^[a-zA-Z0-9@._/-]+$/u.test(value))
+      [command, ...args].some((value) => !/^[a-zA-Z0-9@._/:-]+$/u.test(value))
     ) {
       throw new Error("Unsupported Corepack argument");
     }

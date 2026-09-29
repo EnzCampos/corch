@@ -13,6 +13,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 
 import { WorkflowValidationError, redactText } from "./workflow-lib.mjs";
+import { run } from "./prepare-worker-worktree.mjs";
 
 const NAME_PATTERN = /^[a-z0-9][a-z0-9._-]{1,79}$/;
 const MAX_LOG_BYTES = 5 * 1024 * 1024;
@@ -24,7 +25,8 @@ function usage() {
 Usage:
   node run-bounded-check.mjs --issue TASK-N --name <label> -- <command> [args...]
 
-The command is spawned without a shell. Sanitized output is stored below the
+Executables run directly; Windows package managers use validated simple tokens.
+Sanitized output is stored below the
 current checkout's .agents/task-state/logs/TASK-N/. Success emits a
 one-line JSON summary; failure also includes at most the final 4000 characters.`;
 }
@@ -81,27 +83,6 @@ function writeAtomically(targetPath, content) {
   }
 }
 
-function spawnCommand(command, commandArgs, options) {
-  if (
-    process.platform !== "win32" ||
-    !new Set(["corepack", "pnpm", "npm"]).has(command)
-  ) {
-    return spawnSync(command, commandArgs, options);
-  }
-  const quote = (value) => {
-    const text = String(value);
-    if (/[\r\n&|<>^%!]/u.test(text)) {
-      throw new WorkflowValidationError(["unsafe Windows command argument"]);
-    }
-    return `"${text.replaceAll('"', '""')}"`;
-  };
-  return spawnSync(
-    "cmd.exe",
-    ["/d", "/s", "/c", [command, ...commandArgs].map(quote).join(" ")],
-    options,
-  );
-}
-
 try {
   const args = parseArguments(process.argv.slice(2));
   if (args.help) {
@@ -125,7 +106,7 @@ try {
       throw new WorkflowValidationError(["log target must not be a symlink"]);
     }
     const started = Date.now();
-    const result = spawnCommand(args.command[0], args.command.slice(1), {
+    const result = run(args.command[0], args.command.slice(1), {
       cwd: checkoutRoot,
       encoding: "utf8",
       shell: false,
