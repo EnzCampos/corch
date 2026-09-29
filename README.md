@@ -93,7 +93,10 @@ do Codex; links `codex://` também preservam o protocolo do aplicativo.
 Requisitos: Node.js 22 ou superior, npm e Git.
 
 Os helpers são escritos em Node.js e podem ser chamados pelo Bash, PowerShell
-ou outro shell do projeto. Bash e PowerShell não são requisitos do Corch.
+ou outro shell do projeto. No Windows, comandos npm, pnpm e Corepack exigem
+Git Bash e o launcher Bash do gerenciador no PATH. O adaptador encontra o Bash
+pela instalação do Git; `CORCH_BASH` permite indicar um caminho absoluto para
+outra instalação do Git Bash. PowerShell não é um requisito.
 As diferenças de execução e limpeza de processos por sistema operacional ficam
 no adaptador de comandos. A [orientação de portabilidade](.agents/skills/corch-development-workflow/references/contracts.md#portable-command-execution)
 define como manter helpers, setup e exemplos independentes do shell.
@@ -174,10 +177,11 @@ anteriores; falhas não marcam sucesso. Saídas ausentes e caminhos que escapam 
 checkout impedem prontidão. A preparação explícita e a do ambiente compartilham
 o lock/cache para evitar instalações concorrentes.
 
-No Windows, argumentos de `npm`, `pnpm` e `corepack` aceitam letras ASCII, números
-e `@ . _ / : -`, incluindo nomes como `verify:ci`. Espaços, aspas, operadores e
-expansões de shell nesses argumentos são rejeitados. O caminho do checkout pode
-conter espaços. Para argumentos complexos, use um arquivo executado com `node`.
+No Windows, os launchers Bash de `npm`, `pnpm` e `corepack` recebem argumentos
+literais, incluindo espaços, aspas e caracteres de shell. O adaptador não monta
+um comando CMD nem interpreta esses argumentos como código. A configuração de
+shell dos scripts do projeto continua pertencendo ao projeto/gerenciador.
+O caminho do checkout pode conter espaços.
 Os checks têm prazo padrão de 180 segundos; `--timeout-ms` permite um prazo
 adequado à suíte. Interrupção ou timeout encerra a árvore de processos iniciada
 pelo comando, sem encerrar processos de outras tarefas.

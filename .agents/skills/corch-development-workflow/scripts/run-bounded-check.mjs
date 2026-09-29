@@ -25,7 +25,8 @@ function usage() {
 Usage:
   node run-bounded-check.mjs --issue TASK-N --name <label> [--timeout-ms 180000] -- <command> [args...]
 
-Executables run directly; Windows package managers use validated simple tokens.
+Executables run directly; Windows npm/pnpm/Corepack shims run through Git Bash
+with literal arguments. CORCH_BASH may select an absolute Git Bash executable path.
 Sanitized output is stored below the
 current checkout's .agents/task-state/logs/TASK-N/. Success emits a
 one-line JSON summary; failure also includes at most the final 4000 characters.`;

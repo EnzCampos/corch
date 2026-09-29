@@ -173,11 +173,20 @@ No hook, dispatch executable or nested role orchestration is required.
 ## Portable command execution
 
 Keep reusable helper logic in Node.js, using its filesystem/path APIs and
-executable-plus-argument process calls. Bash and PowerShell are not prerequisites
-for Corch. `lib/command-execution.mjs` owns the platform-specific process adapter:
-Windows uses `cmd.exe` for npm/pnpm/Corepack shims and `taskkill.exe` for process
-tree cleanup; Linux and macOS launch executables directly and stop owned process
-groups. Keep those operating-system branches inside the adapter.
+executable-plus-argument process calls. `lib/command-execution.mjs` owns the
+platform-specific process adapter. On Windows, npm/pnpm/Corepack use their Bash
+shims from PATH through Git Bash. The adapter discovers Bash beside Git's
+execution directory; set `CORCH_BASH` to an absolute Git Bash executable path for
+a custom installation. It fails clearly when Bash or the package manager's shell
+shim is missing, without falling back to CMD or the WSL launcher.
+
+The adapter passes literal arguments, disables Bash startup files and MSYS path
+rewriting, and supports spaces, quotes and shell metacharacters without treating
+them as shell code. The package manager still owns how project scripts execute;
+their shell setting remains a project decision. Other executables run directly.
+Windows process-tree cleanup uses the native `taskkill.exe` executable without
+CMD; Linux and macOS launch executables directly and stop owned process groups.
+Keep those operating-system branches inside the adapter.
 
 Setup `command`/`args` and bounded-check arguments describe an executable and
 literal arguments, not shell source. Put reusable multi-step logic in a Node.js
