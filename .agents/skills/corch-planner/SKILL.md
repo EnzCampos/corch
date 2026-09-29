@@ -5,7 +5,7 @@ description: Discuss one Corch issue with the user and save its source-grounded 
 
 # Corch Planner
 
-Run as `[TASK-N] Planner` on `gpt-6-astra`/`xhigh` before Worker creation. Reuse this task;
+Run as `[TASK-N] Planner` on the configured Planner runtime before Worker creation. Reuse this task;
 never create/fork tasks or delegate. Instructions do not toggle native Plan mode.
 
 Use local task context and inspect only relevant source, specs and docs. Treat
@@ -61,8 +61,8 @@ The Worker finalizes proportional gates from the diff; no blanket rerun rules.
 
 Save/register before approval. In chat, give the explanation above, link the file
 and disclose delivery authorization once. One approval covers that revision.
-Keep runtime routing: Luna/xhigh for bounded execution, Luna/max for involved
-execution; GPT-5.6 Sol for remaining reasoning/risk. Plan detail alone never lowers the
+Keep the recorded implementation route; shared helpers resolve `workflow.json`
+runtime settings. Plan detail alone never lowers the
 route: difficult debugging or concurrency may still need stronger execution.
 
 Simplify multiple owners/new mechanisms once, without an extra approval gate.

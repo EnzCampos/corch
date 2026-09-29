@@ -3,6 +3,7 @@
   "baseBranch": "main",
   "issuePrefix": "TASK",
   "localCiCommand": "npm run verify:ci",
+  "runtimes": {},
   "setup": {
     "steps": []
   }

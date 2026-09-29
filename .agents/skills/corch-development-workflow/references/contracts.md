@@ -10,21 +10,32 @@
   and delivered events. `tasks.planner` records require `kind="task"` for a
   visible Planner. The Planner creates the plan before Worker creation;
   both tasks use the same registered worktree/branch.
-- `execution-route/v2`: runtime for implementation after Astra planning. Bounded/
-  routine uses Luna/xhigh; standard and decision-complete complex work use
-  Luna/max; remaining high-risk/exceptional reasoning uses GPT-5.6 Sol/high or xhigh.
-  Luna routes use `gpt-6-luna`. Reviewer matches its Worker; Tester dispatch uses
-  GPT-6 Luna/xhigh.
+- `execution-route/v2`: immutable runtime snapshot for implementation. Configuration
+  and defaults are resolved by `lib/runtime-policy.mjs`; validation checks shape, not
+  equality with current configuration. `task-state/v2.executionRouteRevision`
+  defaults to 1 for old state; `executionRouteHistory` contains prior
+  `{revision, route}` snapshots. `escalate-route --expected-revision N` atomically
+  advances upward with classification, risk signals and rationale, rejecting stale
+  revisions and active checkout leases. Identical retries preserve the snapshot.
 - `worker-bootstrap/v2`: work-item key/title/source reference, reserved branch, exact delivery
   target, execution route, and local context path.
-  Stage as `.agents/task-state/TASK-N-bootstrap-input.json` in the primary checkout.
+  Record the route once with `task-state.mjs record-route`, then pass the bootstrap
+  identity to `prepare-worker-bootstrap.mjs`; its CLI input may omit `executionRoute`.
+  Both roles read the saved route from `--worktree` (default current directory).
+  An embedded snapshot is validated but never overrides saved state; missing or
+  malformed state fails without fallback. The helper returns a complete `bootstrap`
+  alongside dispatch fields and writes nothing. Stage that object as
+  `.agents/task-state/TASK-N-bootstrap-input.json` in the primary checkout before
+  Planner creation. Stored packets remain strict v2; no separate route file is needed.
   New Planner prompts carry `Corch bootstrap: TASK-N`; the synchronous hook
   validates it against staged state/input, safely attaches the reserved branch,
   hydrates context and registers the hook session ID before dependency verification.
-  SessionStart is read-only; unmarked prompts do not trigger preparation.
+  SessionStart is read-only and exposes a validated Corch session ID; unmarked
+  prompts do not trigger preparation.
   New dispatch uses `prepare-worker-bootstrap.mjs --role planner --coordinator ID`
-  first (`gpt-6-astra`/`xhigh`), then `--role worker --plan-revision N` only after the user
-  approves the saved plan. The latter emits the implementation runtime and reads
+  first, then `--role worker --plan-revision N --worktree <absolute-checkout>` only
+  after the user approves the saved plan. The latter reads the latest saved route,
+  returns explicit runtime and `worker-route:N` deduplication metadata, and reads
   the plan without another planning pass. Capacity/setup holds, handoff waits,
   and readiness turns are invalid; the packet never embeds full source text.
 - `implementation-plan/v4`: the authoritative Markdown at
@@ -37,12 +48,23 @@
   Registration checks file identity, not design quality; the Planner and Worker
   must assess completeness. Amend the same Markdown and increment its reference.
   A clear direct user decision authorizes its revision without an approval loop.
-- `gate-delta-assessment/v1`: local ancestry, changed paths/statistics, impact,
-  action, acceptance focus, prior finding IDs, and requested result. The Worker
-  combines it with issue/PR/validation identity to create `gate-attempt/v1`.
+- `delivery-preflight/v1` / `delivery-preflight-result/v1`: unchanged dependency
+  snapshot and assessment contracts. Required only when selected work or its known
+  delivery neighborhood contains hard or coordination relationships. Dependency-free
+  work skips the helper and packet, including unrelated Coordinator items. Always
+  check readiness, completion, capacity, active families and ownership. When applied,
+  verify directed dependencies, block unmet merge/Done milestones and enforce
+  declared concurrency boundaries. Direct delivery needs no task packets.
+- `gate-delta-assessment/v1`: local ancestry, changed paths/statistics, explicit
+  impact/rationale, action, acceptance focus, prior finding IDs, and requested result.
+  Dispatch computes and embeds it directly in `gate-attempt/v1`; no assessment file
+  is needed. Standalone assessment remains available for deciding on another attempt.
 - `gate-attempt/v1`: role, PR/current/comparison commits, topology/action,
-  changed paths/statistics, acceptance focus, prior finding IDs, validation, and
-  requested result. It contains no full source packet, plan, role contract, or diff.
+  comparison range, impact/rationale, changed paths/statistics, acceptance focus, prior finding IDs, validation, and
+  requested result. Fresh chat prompts add Worker identity, repository/branch,
+  absolute checkout, current acceptance/user decisions/waivers, context/plan
+  references and result destination. No transcript, implementation narrative,
+  full source packet, plan, role contract or diff is transferred.
 - `review-result/v2` / `test-result/v2`: complete first/current technical result.
 - `review-amendment/v1` / `test-amendment/v1`: base result path, issue/current/
   comparison commits, verdict/summary, acceptance updates, explicit carry-forward
@@ -57,6 +79,57 @@
   readiness, blockers, and dependency links.
 
 ## Input and evidence destinations
+
+`gate.mjs dispatch` reads JSON from stdin: `issueKey`, `gate` (`review` or
+`test`), absolute `worktree`, matching saved `projectId`/`projectPath` from
+`list_projects`, `observedSha`, optional `comparedFromSha`, `pullRequest`
+(`number`, `url`), current string arrays `acceptanceCriteria` and `userDecisions`,
+optional contract `waivers`, `validation` command outcomes, `reviewDecision`
+(`decision`, `rationale`), positive stable `attempt` number, and checkout-relative
+`resultPath` under `.agents/evidence/<issue>/<sha>/`. Optional `delta` accepts
+`{impact, rationale, acceptanceFocus?, priorFindingIds?}`, with impact one of
+`irrelevant`, `affected`, `material`. Gate and commits come from the surrounding
+request. A complete `gate-delta-assessment/v1` is also accepted: its identity and
+all recomputed Git facts must agree. Git runs in the absolute Worker checkout.
+The attempt embeds the comparison range, topology, judgment, action, changed files,
+statistics, focus, prior IDs and requested result. No delta keeps first-attempt behavior.
+Refresh the current user target
+before preparing this input; never reconstruct it from the implementation story.
+The helper reads state and checks the registered checkout/branch/commit, local
+context/plan references and Reviewer completion before a required Tester.
+
+Output `action=create` supplies exact `create_thread` arguments, including title,
+complete prompt, runtime and local saved-project target. `reuse` supplies
+`send_message_to_thread` arguments without runtime overrides. `delivered` means
+the attempt event was already recorded; `recover` identifies an unclaimed chat
+to inspect before any resend. Record the returned `eventKey` after confirmed
+dispatch. Ambiguous app calls require a target/title/event check, never blind
+recreation. Keep existing gate chats, including older forks, until retirement.
+
+Fresh gates first run `claim-gate --issue KEY --gate review|test --thread <validated-session-id>
+--worktree <absolute-worker-checkout> --sha <commit>`. This operation selects the
+supplied checkout even when invoked from the primary directory, verifies the
+registered Worker and actual Git identity, and registers the gate and acquires its
+lease atomically. All inspection and evidence operations use that same checkout.
+The Worker must stop checkout activity before dispatch, wait for completion and
+release the lease afterward. Missing session identity or a failed claim blocks
+inspection. Corrections claim again in the same gate chat; no readiness exchange,
+additional checkout, setup or subagents. Result/amendment schemas remain unchanged.
+
+The gate command offers top-level and per-command `--help`:
+
+| Command | Inputs and output |
+| --- | --- |
+| `gate.mjs selection` | `--issue`, `--pr`, `--head-branch`, `--selection`; existing validated selection summary and marker |
+| `gate.mjs assess` | `--gate review\|test`, `--from`, `--to`, `--impact`, `--rationale`; repeatable `--acceptance`/`--finding`; assessment JSON |
+| `gate.mjs compose` | `--gate review\|test`, `--base`, `--amendment`; complete v2 result on stdout |
+| `gate.mjs dispatch` | JSON stdin; existing create/reuse/delivered/recover response |
+
+Selection, assessment and dispatch are read-only. Composition's optional `--output`
+creates only `.agents/evidence/<issue>/<sha>/<gate>-result.json` and refuses overwrite.
+It requires matching base identity, disposition of every previous finding/failure,
+and updated or explicitly carried acceptance criteria. State and leases remain
+owned by `task-state.mjs`.
 
 The `issue` field is a normalized work item, not a required external ticket.
 Its `key` is the stable internal key used for branches and local state. It may
@@ -75,14 +148,23 @@ mutating its source or publishing evidence there. A dependency's
 context/user decisions or a native tracker link. No provider-specific link type
 or tracker account is required. Keep the milestone and concurrency checks.
 
-`prepare-evidence.mjs` validates artifacts and returns a local Markdown report;
-it performs no publication. The current conversation and ignored evidence files
+`prepare-report.mjs --issue TASK-N --pr N --gate review|test|handoff
+--head-branch codex/task-n-<slug> --result <json-path>` validates the result and
+artifacts once, then returns the local Markdown `commentBody`, `marker`, `files`,
+and nested `prComment` (`status`, `marker`, `body`, `evidenceUrl`, `nativeUploads`,
+`browserRequired`). Review/test require `--profile`; handoff derives the profile
+from its selection and rejects a conflicting override. Invalid declared evidence
+blocks both views. `--dry-run` retains full validation and marks the output accordingly.
+Final handoff requires this report; a separate `gate.mjs selection` invocation is
+optional early feedback, never an additional mandatory final step.
+The helper writes no files and performs no publication. The current conversation and ignored evidence files
 are a complete review surface. When an external destination is explicitly selected
 and authorized, use its supported adapter and deduplicate by the report marker.
 Publication state never changes the technical verdict. Missing attachment support
 is a disclosed limitation, not a reason to rerun checks or require a tracker.
-`prepare-pr-comment.mjs --evidence-url <https-url>` adds an already-published
-reference; omit the option for a local report. Gate outcomes use nullable
+Use the same output's `prComment.marker` and `prComment.body` for an authorized
+text-only PR comment. `--evidence-url <https-url>` adds an already-published,
+verified reference; omit the option for a local report. Gate outcomes use nullable
 `evidenceUrl` instead of a provider-specific comment URL.
 
 ## Explicit check waivers
@@ -132,5 +214,7 @@ approval interruptions requiring a user response; repeated checks without a
 relevant code, environment, or failure-remediation change; and distinct defects
 found by each gate and accepted by the Worker. Link the evidence, note scope and
 risk differences between samples, and mark unavailable measurements unknown.
+Use those same results to assess whether amendments avoided repeated review work
+and justify their maintenance cost.
 This is a manual assessment, not a delivery gate or scheduled task; add no
 per-delivery tracking files, instrumentation, or dashboard.

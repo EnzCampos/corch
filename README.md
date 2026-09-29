@@ -18,7 +18,8 @@ de acesso para impedir alterações concorrentes.
 | --- | --- |
 | `AGENTS.md` | Instruções gerais para o projeto |
 | `.agents/skills/corch-*` | Router, Coordinator, Refinement, Planner, Worker, Reviewer, Tester e adaptador Jira |
-| `.agents/skills/corch-development-workflow/scripts` | Validação de contratos, bootstrap, estado, gates e preparação de evidências |
+| `.agents/skills/corch-development-workflow/scripts` | Nove helpers executáveis: oito centrais e preflight opcional |
+| `.agents/skills/corch-development-workflow/scripts/lib` | Nove módulos internos, sem comandos executáveis |
 | `.agents/skills/corch-development-workflow/references` | Contratos do workflow atual |
 | `.codex/hooks.json` | Contexto de sessão e preparação do Planner |
 | `.codex/environments/environment.toml` | Preparação do checkout pelo ambiente local |
@@ -62,9 +63,9 @@ de CI configura a suíte em Windows e Linux, com Node.js 22 e 24.
    no Codex. O início de sessão é somente leitura; o hook do Planner e o ambiente
    local podem executar os passos de preparação configurados.
 5. Para implementação com PR, conecte GitHub e disponibilize as ferramentas
-   de conversas/worktrees do Codex desktop. Confira os modelos indicados nas
-   skills e nos runtimes de `workflow-lib.mjs`; adapte-os aos
-   disponíveis no seu ambiente. As skills mantêm os termos dos contratos em inglês.
+   de conversas/worktrees do Codex desktop. Configure modelos e esforço em
+   `workflow.json.runtimes`, conforme o ambiente. As skills mantêm os termos
+   dos contratos em inglês.
 
 `TASK-N`, `codex/task-n-<slug>`, `main` e `npm run verify:ci` nas instruções são
 exemplos que seguem a configuração. A variável `CORCH_CONFIG` permite carregar
@@ -93,9 +94,82 @@ Exemplo para um projeto npm com lockfile:
 Os comandos rodam na raiz do checkout, com argumentos separados e caminhos
 relativos ao repositório. O cache considera comandos, entradas, saídas e passos
 anteriores; uma falha não marca o passo como concluído. No Windows, os argumentos
-de `npm`, `pnpm` e `corepack` ficam restritos a tokens simples para evitar
-interpretação de código pelo shell. Para argumentos complexos, use um script
-Node executado com `node`.
+de `npm`, `pnpm` e `corepack`, tanto no setup quanto em `run-bounded-check.mjs`,
+ficam restritos a letras ASCII, números e `@ . _ / : -`. Isso permite scripts
+como `npm run verify:ci` e rejeita espaços, aspas, operadores e expansões do
+shell nos argumentos. O diretório do checkout pode conter espaços. Para
+argumentos complexos, use um script Node executado com `node`.
+
+As mutações de `task-state.mjs` usam um lock exclusivo por arquivo de estado,
+como `.agents/task-state/TASK-42.json.lock`, durante a leitura, validação e
+gravação. Comandos concorrentes aguardam até cinco segundos; `show` continua
+disponível sem adquirir o lock. O lock temporário registra PID e token do dono
+e é distinto da lease de Reviewer/Tester gravada no JSON.
+
+Se houver timeout, aguarde o comando dono terminar e tente novamente. Um lock
+abandonado ou com dono não verificável nunca é removido automaticamente. Antes
+de remover apenas o arquivo `.json.lock` indicado no erro, confira o PID e
+confirme que nenhum comando `task-state.mjs` está escrevendo nesse estado.
+Se não conseguir confirmar, preserve o lock. Não remova o JSON nem limpe a lease
+do gate para resolver esse problema.
+
+## Runtimes e gates
+
+`runtimes` é opcional. `planner`, `tester` e cada classificação de `worker`
+aceitam pares completos `model`/`reasoningEffort`. `reviewer` também aceita
+`"worker"`, usando a rota gravada do Worker no momento da criação da conversa.
+Exemplo de overrides parciais, sem alterar as outras classificações:
+
+```json
+{
+  "runtimes": {
+    "planner": { "model": "gpt-6-astra", "reasoningEffort": "xhigh" },
+    "worker": { "complex": { "model": "gpt-5.6-sol", "reasoningEffort": "high" } },
+    "reviewer": "worker",
+    "tester": { "model": "gpt-6-luna", "reasoningEffort": "xhigh" }
+  }
+}
+```
+
+Sem overrides: Planner usa Astra/xhigh; Worker bounded/routine usa Luna/xhigh,
+standard/complex usa Luna/max, high-risk usa GPT-5.6 Sol/high e exceptional usa
+GPT-5.6 Sol/xhigh; Reviewer acompanha o Worker e Tester usa Luna/xhigh.
+Os nomes completos dos modelos ficam em `lib/runtime-policy.mjs`. A validação local
+confere a estrutura; o Codex valida disponibilidade e combinações de esforço.
+Se rejeitar um runtime, corrija a configuração explicitamente, sem fallback.
+Rotas já gravadas são snapshots: editar a configuração não as modifica nem invalida.
+
+Grave a rota inicial uma vez com `task-state.mjs record-route`, informando
+`--issue`, `--classification`, `--rationale` e os sinais relevantes em `--signal`.
+Depois execute `prepare-worker-bootstrap.mjs --role planner --coordinator <id>`
+com a identidade do bootstrap em stdin, sem montar `executionRoute` manualmente.
+O helper lê o estado salvo em `--worktree` (por padrão, o diretório atual) e retorna
+o objeto completo `bootstrap`, além do prompt e runtime. Salve esse objeto em
+`.agents/task-state/TASK-N-bootstrap-input.json` antes de criar o Planner.
+A preparação não grava arquivos; não é necessário um arquivo separado de rota.
+O mesmo helper lê a rota salva para continuar o Worker após a aprovação do plano.
+
+O Worker pode pedir escalada com evidência e encerrar o turno. O Coordinator
+aguarda o término, confirma ausência de lease e executa `escalate-route` no checkout
+do Worker com `--expected-revision`, `--classification`, `--signal` e `--rationale`.
+A ordem é bounded/routine → standard/complex → high-risk → exceptional, sem redução
+automática. O estado preserva revisões anteriores; rotas antigas começam na revisão 1.
+O helper de continuação lê a rota atual e fornece o evento `worker-route:N` para
+deduplicação. Após envio ambíguo, confira a conversa antes de reenviar. Continuam
+válidos a aprovação, o checkout, o progresso e as validações concluídas.
+
+Reviewer e Tester novos começam por `create_thread`, com histórico novo, no
+projeto salvo correspondente e ambiente local. `gate.mjs dispatch` gera
+os argumentos completos; seu contrato de entrada está no registro de contratos.
+O Worker para de usar o checkout antes da criação. O primeiro comando do gate é
+`claim-gate`, com seu ID validado pelo hook SessionStart e o caminho absoluto do
+checkout do Worker. Esse comando registra a conversa e adquire a lease sob o
+mesmo lock; uma falha não deixa registro parcial. Ausência de ID impede inspeção.
+O diretório inicial da conversa pode ser o checkout principal: comandos, leituras,
+estado e evidências sempre apontam explicitamente para o checkout do Worker.
+Não há outro worktree, setup ou subagentes. Reviewer termina antes do Tester;
+correções reutilizam cada conversa e seu modelo. Famílias já registradas continuam
+válidas. O Worker só libera a lease depois de confirmar o término do gate.
 
 ## Fluxo de uso
 
@@ -104,6 +178,34 @@ coordenado, use `$corch-refinement` para organizar a demanda e
 `$corch-delivery-coordinator` para iniciar o item escolhido. O Coordinator prepara
 a família, o Planner produz o plano e o Worker implementa e seleciona os gates
 proporcionais ao risco.
+
+Preflight é obrigatório somente quando o item selecionado ou sua vizinhança conhecida
+contém relações hard ou de coordenação. Sem essas relações, o Coordinator também
+dispensa o helper e o pacote. Permanecem as verificações de prontidão, conclusão,
+capacidade, famílias ativas e responsabilidade. Quando houver dependências, preserve
+a verificação dos vínculos, os bloqueios por milestone e os limites de concorrência.
+Entrega direta continua sem pacotes de tarefa.
+
+## Helpers e módulos internos
+
+Há 18 arquivos `.mjs`: nove executáveis na raiz de `scripts/` e nove módulos em
+`scripts/lib/`. Os oito helpers centrais são `workflow-hook.mjs`,
+`prepare-worker-worktree.mjs`, `materialize-task-context.mjs`, `task-state.mjs`,
+`run-bounded-check.mjs`, `prepare-worker-bootstrap.mjs`, `prepare-report.mjs` e
+`gate.mjs`. O nono, `assess-delivery-preflight.mjs`, só se aplica às relações acima.
+
+Os módulos internos são `lib/workflow-config.mjs`, `lib/runtime-policy.mjs`,
+`lib/task-source.mjs`, `lib/validation.mjs`, `lib/bootstrap.mjs`,
+`lib/delivery-state.mjs`, `lib/task-context.mjs`, `lib/gate-contracts.mjs` e
+`lib/report.mjs`. Cada consumidor importa o responsável pela função; não há fachada.
+
+`gate.mjs` reúne `selection`, `assess`, `compose` e `dispatch`; todos oferecem
+`--help`. Assessment e composição usam `--gate review|test`. Na correção normal,
+envie `delta: {impact, rationale, acceptanceFocus?, priorFindingIds?}` ao dispatch.
+Ele calcula a topologia Git e incorpora a avaliação no pacote existente, sem criar
+um documento intermediário. Uma avaliação completa fornecida é conferida contra
+o Git. Use `assess` separadamente apenas para decidir sobre uma nova tentativa;
+`compose` combina resultado-base e amendment e recusa sobrescrever uma saída.
 
 As skills preservam decisões e autorizações explícitas do usuário. A aprovação
 do plano de entrega identifica o destino e as ações externas incluídas. Merge,
@@ -127,12 +229,18 @@ local. O escopo, os critérios de aceitação e as decisões do usuário ficam n
 contexto da tarefa. Dependências podem ser registradas e verificadas nesse
 contexto, sem criar links em um tracker.
 
-`prepare-evidence.mjs` prepara o relatório e os metadados dos artefatos localmente.
-A conversa e os arquivos ignorados de evidência bastam para a revisão. O script
-não publica nada. Uma origem externa não é automaticamente um destino autorizado
-de publicação. Em `prepare-pr-comment.mjs`, `--evidence-url` é opcional; use-o
-apenas quando existir evidência publicada e verificada. Status externos também
-são opcionais e seguem as capacidades da ferramenta escolhida.
+`prepare-report.mjs` valida o resultado e seus artefatos uma vez e retorna
+`commentBody`, `marker`, `files` e `prComment` na mesma chamada. Use
+`prComment.marker` e `prComment.body` para o resumo textual de uma PR autorizada.
+O handoff final exige esse relatório; `gate.mjs selection` é apenas feedback
+antecipado opcional, sem uma segunda validação obrigatória.
+Review/test exigem `--profile`; handoff usa o perfil da seleção e rejeita divergências.
+Evidência declarada inválida impede as duas saídas. A conversa e os arquivos
+ignorados de evidência bastam para a revisão. O script não grava arquivos nem
+publica nada. Uma origem externa não é automaticamente um destino autorizado
+de publicação. `--evidence-url` é opcional; use-o apenas quando existir evidência
+publicada e verificada. Status externos também são opcionais e seguem as
+capacidades da ferramenta escolhida.
 
 Estado de tarefas, planos, logs, evidências, arquivos de ambiente e histórico de
 outros repositórios não fazem parte do conteúdo distribuído.

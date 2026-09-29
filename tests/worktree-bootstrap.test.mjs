@@ -1,4 +1,4 @@
-import { CONFIG } from "../.agents/skills/corch-development-workflow/scripts/workflow-config.mjs";
+import { CONFIG } from "../.agents/skills/corch-development-workflow/scripts/lib/workflow-config.mjs";
 import assert from "node:assert/strict";
 import {
   existsSync,
@@ -14,10 +14,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
-import {
-  buildDeliveryTaskDispatch,
-  createExecutionRoute,
-} from "../.agents/skills/corch-development-workflow/scripts/workflow-lib.mjs";
+import { buildDeliveryTaskDispatch, createExecutionRoute } from "../.agents/skills/corch-development-workflow/scripts/lib/bootstrap.mjs";
 import {
   plannerLaunchFromPrompt,
   prepareWorktree,
@@ -175,6 +172,37 @@ async function fixture(action) {
     });
   }
 }
+
+test("read-only Planner preparation emits a strict packet accepted by the startup hook", () =>
+  fixture(async ({ primary, create, execute, calls }) => {
+    const task = create(101);
+    command(primary, process.execPath, [path.join(scripts, "task-state.mjs"),
+      "record-route", "--issue", task.issue, "--classification", "bounded",
+      "--rationale", "A bounded fixture."]);
+    const statePath = path.join(primary, `.agents/task-state/${task.issue}.json`);
+    const inputPath = path.join(primary, `.agents/task-state/${task.issue}-bootstrap-input.json`);
+    const stateBefore = readFileSync(statePath, "utf8");
+    const inputBefore = readFileSync(inputPath, "utf8");
+    const { executionRoute, ...identity } = task.input;
+    const prepared = JSON.parse(command(task.cwd, process.execPath,
+      [path.join(scripts, "prepare-worker-bootstrap.mjs"), "--role", "planner",
+        "--coordinator", "coordinator-fixture", "--worktree", primary],
+      { input: JSON.stringify(identity) }));
+    assert.deepEqual(prepared.bootstrap, task.input);
+    assert.equal(readFileSync(statePath, "utf8"), stateBefore);
+    assert.equal(readFileSync(inputPath, "utf8"), inputBefore);
+    assert.equal(existsSync(path.join(task.cwd, `.agents/task-state/${task.issue}.json`)), false);
+    write(inputPath, prepared.bootstrap);
+    const result = await userPromptSubmit({
+      cwd: task.cwd, session_id: task.sessionId, prompt: prepared.prompt,
+    }, { execute });
+    assert.match(result.hookSpecificOutput.additionalContext, /bootstrap ready/);
+    assert.equal(git(task.cwd, "branch", "--show-current"), task.branch);
+    const state = JSON.parse(readFileSync(path.join(task.cwd, `.agents/task-state/${task.issue}.json`)));
+    assert.equal(state.tasks.planner.threadId, task.sessionId);
+    assert.deepEqual(state.executionRoute, executionRoute);
+    assert.equal(calls.length, 2);
+  }));
 
 test("detached simultaneous starts attach different branches and hydrate/register before model execution", () =>
   fixture(async ({ create, execute, calls }) => {

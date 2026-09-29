@@ -3,14 +3,14 @@ import {
   REPOSITORY,
   ISSUE_PREFIX,
   BRANCH_PATTERN,
-} from "./workflow-config.mjs";
+} from "./lib/workflow-config.mjs";
 
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
-import { redactText } from "./workflow-lib.mjs";
+import { redactText } from "./lib/validation.mjs";
 import {
   plannerLaunchFromPrompt,
   prepareWorktree,
@@ -104,11 +104,14 @@ function hookContext(eventName, additionalContext) {
 }
 
 function sessionStart(event) {
+  const sessionIdentity = typeof event.session_id === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(event.session_id)
+    ? `Corch session ID: ${event.session_id}.`
+    : "Corch session ID unavailable: gate claims must stop until a validated session ID is supplied by SessionStart.";
   const context = repositoryContext(event.cwd || process.cwd());
   if (!context) {
     return hookContext(
       "SessionStart",
-      "This session is not inside a Git repository.",
+      `${sessionIdentity} This session is not inside a Git repository.`,
     );
   }
   const localContextPath = context.issueKey
@@ -122,6 +125,7 @@ function sessionStart(event) {
   return hookContext(
     "SessionStart",
     [
+      sessionIdentity,
       `Corch ${REPOSITORY}; ${context.worktree ? "worktree" : "primary"}; branch ${context.branch || "detached"}; commit ${context.headSha}.`,
       identity,
       "This is read-only session context, not a readiness check. New Planner launch prompts prepare the checkout before planning.",

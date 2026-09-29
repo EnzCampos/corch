@@ -4,7 +4,7 @@ import {
   issueFromBranch,
   CONFIG,
   readConfig,
-} from "./workflow-config.mjs";
+} from "./lib/workflow-config.mjs";
 
 import { createHash } from "node:crypto";
 import {
@@ -22,7 +22,8 @@ import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 
-import { redactText, validateWorkerBootstrap } from "./workflow-lib.mjs";
+import { redactText } from "./lib/validation.mjs";
+import { validateWorkerBootstrap } from "./lib/bootstrap.mjs";
 
 const MAX_DIAGNOSTIC_LENGTH = 2_000;
 const SCRIPT_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));

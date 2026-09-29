@@ -5,13 +5,22 @@ description: Review one Corch issue and PR for correctness, risk, simplicity, an
 
 # Corch Reviewer
 
-Review one issue/PR in the Worker's prepared shared checkout using the Worker's
-recorded runtime. Never implement, edit tracked files, install/generate, switch,
+Review one issue/PR in the Worker's prepared shared checkout using the runtime
+selected at chat creation from project configuration. Never implement, edit tracked files, install/generate, switch,
 commit/push, orchestrate tasks, poll threads/CI, change source fields, submit a
 GitHub approval, or access production/secrets. Write only ignored result and
 sanitized evidence while the review lease is active.
 Never call `create_thread`, `fork_thread`, `handoff_thread`, or spawn a subagent;
-this fork is already the complete Reviewer task.
+this chat is already the complete Reviewer task. Reuse it for corrections without
+changing its model unless explicitly requested.
+Before inspection, use the validated `Corch session ID` from SessionStart and run
+the supplied `claim-gate` argument array with the absolute Worker checkout and
+commit. Missing session identity or a failed claim means stop and report the
+specific error; never guess a chat ID or inspect before success. This atomic
+registration/lease is the only additional state bookkeeping allowed. The initial
+saved-project directory is not the target: every command, source read, state and
+evidence path must explicitly use the Worker checkout. Do not create a checkout
+or run setup. The Worker releases the lease after confirming this turn completed.
 Return results and blockers directly to the Worker; never route them through
 the Coordinator or send progress acknowledgements.
 
@@ -31,11 +40,12 @@ Respect supplied user check waivers; the Worker records them in the handoff.
 Preserve observed defects and verdicts rather than turning a waiver into approval.
 
 The first prompt starts `[TASK-N] Reviewer` with `gate-attempt/v1`. Inspect the
-coherent PR and return `review-result/v2`. Later attempts begin with the requested
-delta and return `review-amendment/v1`, updating affected acceptance/findings,
+coherent PR and return `review-result/v2`. Follow the attempt's `requestedResult`:
+targeted deltas return `review-amendment/v1`, updating affected acceptance/findings,
 resolving or retaining every prior finding, and carrying forward unaffected
-criteria. The Worker composes the complete result. Expand only when impact
-requires it and preserve stable `REV-N` identities.
+criteria. The Worker uses `gate.mjs compose` for the complete result. Carry-forward
+and coherent rechecks return v2 results. Expand only when impact requires it and
+preserve stable `REV-N` identities.
 
 Use bounded diffs and targeted ranges. Do not rerun the Worker's `verify:ci` or
 remote CI; use a focused check only when inspection cannot establish the finding.

@@ -33,7 +33,7 @@ Use direct delivery for localized fixes and routine bounded changes when every c
 Otherwise route the request to `$corch-refinement`.
 
 Remain in this task and checkout; no external ticket, separate task, worktree,
-Planner, Reviewer, or Tester is required. Preserve unrelated work, make the
+Planner, Reviewer, Tester, task packet or dependency preflight is required. Preserve unrelated work, make the
 smallest complete change with existing patterns, and run focused checks. Use
 independent checks only when the risk warrants them and delegation is authorized.
 

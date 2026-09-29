@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { ISSUE_PATTERN } from "./workflow-config.mjs";
+import { ISSUE_PATTERN } from "./lib/workflow-config.mjs";
 
 import {
   existsSync,
@@ -12,7 +12,7 @@ import {
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-import { WorkflowValidationError, redactText } from "./workflow-lib.mjs";
+import { WorkflowValidationError, redactText } from "./lib/validation.mjs";
 import { run } from "./prepare-worker-worktree.mjs";
 
 const NAME_PATTERN = /^[a-z0-9][a-z0-9._-]{1,79}$/;

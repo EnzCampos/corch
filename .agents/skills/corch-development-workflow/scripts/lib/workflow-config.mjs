@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { validateRuntimeSettings } from "./runtime-policy.mjs";
 
 export function validateConfig(value) {
   const fail = (message) => {
@@ -65,12 +66,17 @@ export function validateConfig(value) {
         fail(`${step.name}.${field} must contain repository-relative paths`);
     }
   }
+  try {
+    validateRuntimeSettings(value.runtimes);
+  } catch (error) {
+    fail(error.message);
+  }
   return value;
 }
 
 export function readConfig(
   configPath = process.env.CORCH_CONFIG ||
-    fileURLToPath(new URL("../../../workflow.json", import.meta.url)),
+    fileURLToPath(new URL("../../../../workflow.json", import.meta.url)),
 ) {
   return validateConfig(JSON.parse(readFileSync(configPath, "utf8")));
 }

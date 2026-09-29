@@ -7,9 +7,9 @@ description: Implement and deliver one selected Corch work item in its assigned 
 
 One Worker owns one issue, branch, worktree, and PR. The Coordinator prepares
 the initial branch, context, and dependencies. Report an incomplete initial
-bootstrap once; never wait for capacity or handoff. Never run the initial configured setup steps
-as initial setup. After bootstrap, own CI diagnosis and bounded local repairs,
-including dependencies and checkout formatting; preserve scope and gate leases.
+bootstrap once; never wait for capacity or handoff. Never run the initial configured setup steps.
+After bootstrap, own CI diagnosis and bounded dependency/checkout repairs;
+preserve scope and gate leases.
 Read local task context, not source, and the complete approved Markdown at
 `.agents/task-state/TASK-N-plan.md`. New Workers start only after approval in the
 visible Planner task, as its same-directory fork. Keep the same branch, worktree
@@ -84,6 +84,11 @@ independent confidence. Rerun `verify:ci` only after code changes or remediation
 
 ## Select and run gates
 
+For escalation, finish any gate, stop checkout activity, and send the Coordinator
+the route revision, upward classification, risk signals and evidence-based rationale;
+end the turn. It records `escalate-route` and continues this chat with explicit
+model/thinking. Preserve approval, progress and validation; no silent fallback.
+
 Finalize `gate-selection/v2` from the diff. Reviewer covers meaningful logic,
 structure, contracts, data, security, infrastructure or ambiguity; Tester covers
 runtime, integration, UI, deployment, regressions and acceptance. Skip both for
@@ -91,11 +96,21 @@ localized no-risk work with rationale or explicit user waivers. Preserve actual
 outcomes and risk flags; validate waivers rather than disguising them as low risk.
 
 Create only when an attempt is ready. If both are selected, finish Reviewer
-before creating Tester. Fork once into the same directory; never in parallel.
-Immediately set exact title `[TASK-N] Reviewer` or `[TASK-N] Tester`, record
-the returned ID, then prompt it. If ambiguous, inspect ID/title once; never
-refork. Reviewer uses the Worker route; Tester uses Luna/xhigh. Acquire the
-lease, stop checkout activity until it finishes, and reuse that role task.
+before creating Tester; never in parallel. Select the matching saved project with
+`list_projects`. Stage the compact input defined in contracts.md and run
+`gate.mjs dispatch`. Stop checkout activity before dispatch. For
+`action=create`, use `create_thread` with its complete title, prompt, model/thinking
+and local project target. No additional worktree, setup or subagent. Fresh chats'
+first action is `claim-gate` with the validated SessionStart identity; inspection
+starts only after success. All reads, commands, state and evidence target the
+absolute Worker checkout, even when the chat starts in the primary directory.
+
+Record the returned chat ID with the helper's event key after confirmed creation;
+the gate atomically registers itself and its lease. `action=reuse` continues that
+chat without model/thinking overrides. Respect `delivered`/`recover`. After
+ambiguous creation inspect title, Worker/commit and event before resending; never
+create a duplicate. Claims may register before creation returns. Preserve existing
+gate chats and families. Report unsupported runtimes without substitution.
 
 Own gates, recovery, CI, and handoff. Send no routine gate/CI updates to the
 Coordinator. Wait with a cursor; silence alone does not prove a stall. Diagnose
@@ -103,14 +118,16 @@ blockers and recover with available tools. Escalate only for a concrete action
 the recipient can perform. If only the user can stop a stuck task, ask directly
 once. Release a lease only after confirmed completion or interruption.
 
-Start its prompt with the exact title, then `Use $corch-reviewer for this gate.`
-or `Use $corch-tester for this gate.`, then
-`gate-attempt/v1`: PR/current commit, comparison commit, changed paths/stats,
-acceptance focus, prior finding IDs, known validation, and requested action. Do
-not resend source, plan, contract, or full diff. Never send readiness handshakes.
+Use the helper's exact title and `Use $corch-reviewer for this gate.` or
+`Use $corch-tester for this gate.` prompt with `gate-attempt/v1`; transfer no
+Worker transcript or implementation narrative. No readiness handshakes.
+After completion, release the lease from the Worker checkout before resuming.
 
-First attempts return complete v2 results. Corrections return
-`review-amendment/v1` or `test-amendment/v1`; compose them deterministically.
+First attempts return complete v2 results. Corrections pass
+`delta: {impact, rationale, acceptanceFocus?, priorFindingIds?}` to dispatch;
+it embeds the assessment without a file. Optional `gate.mjs assess` informs whether
+to retry. Combine returned `review-amendment/v1` or `test-amendment/v1` with the base
+using `gate.mjs compose --gate review|test`.
 Carry forward irrelevant deltas with rationale, target affected deltas, and
 recheck coherently after rewritten history or material scope change. Record a
 valid verdict before publication.
@@ -118,9 +135,11 @@ valid verdict before publication.
 ## Evidence and handoff
 
 Only captioned, acceptance-mapped, sanitized evidence under the work-item/commit
-directory counts. Prepare it with `prepare-evidence.mjs`; it validates files and
-returns a Markdown report and artifact metadata without uploading anything.
-Keep the report in ignored state and link it in chat.
+directory counts. Final handoff requires `prepare-report.mjs`; `gate.mjs selection`
+is optional early feedback. One report invocation validates readiness and files
+and returns `commentBody`, artifact metadata and `prComment` together without
+uploading anything. Review/test require `--profile`; handoff derives it from the
+selection. Keep the report in ignored state and link it in chat.
 A local handoff needs no tracker, external comment or upload.
 
 When the user selected an external evidence destination, use its available,
@@ -129,7 +148,8 @@ comments. Reuse existing publication authority; do not infer an external write
 from the mere presence of a source URL. If attachments are unsupported, retain
 validated metadata locally and disclose that limitation without rerunning a gate.
 
-Use `prepare-pr-comment.mjs` for a text summary. Its `--evidence-url` is optional;
+Reuse that report's `prComment.marker` and `prComment.body` for a text summary.
+The report's `--evidence-url` is optional;
 include it only after verifying the evidence was actually published. Without an
 external URL the summary identifies evidence as local, never as uploaded.
 

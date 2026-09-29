@@ -3,21 +3,15 @@ import test from "node:test";
 import {
   isHttpsUrl,
   isSourceRef,
-} from "../.agents/skills/corch-development-workflow/scripts/task-source.mjs";
+} from "../.agents/skills/corch-development-workflow/scripts/lib/task-source.mjs";
 import {
   REPOSITORY,
   REMOTE_URL,
   BASE_BRANCH,
   ISSUE_PREFIX,
-} from "../.agents/skills/corch-development-workflow/scripts/workflow-config.mjs";
-import {
-  normalizeTaskContextSnapshot,
-  buildTaskContextMarkdown,
-  validateWorkerBootstrap,
-  createExecutionRoute,
-  buildDeliveryTaskDispatch,
-  validateRefinementResult,
-} from "../.agents/skills/corch-development-workflow/scripts/workflow-lib.mjs";
+} from "../.agents/skills/corch-development-workflow/scripts/lib/workflow-config.mjs";
+import { normalizeTaskContextSnapshot, buildTaskContextMarkdown, validateRefinementResult } from "../.agents/skills/corch-development-workflow/scripts/lib/task-context.mjs";
+import { validateWorkerBootstrap, createExecutionRoute, buildDeliveryTaskDispatch } from "../.agents/skills/corch-development-workflow/scripts/lib/bootstrap.mjs";
 import { plannerLaunchFromPrompt } from "../.agents/skills/corch-development-workflow/scripts/prepare-worker-worktree.mjs";
 
 const issueKey = `${ISSUE_PREFIX}-42`;

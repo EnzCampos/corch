@@ -9,28 +9,26 @@ Own intake, dependency preflight, runtime, Planner/Worker creation, cross-worker
 blockers, worktree recovery and retirement. Do not implement, refine source or
 proxy routine Worker/gate conversation.
 
-Direct user decisions in a Planner or Worker supersede source scope, prior plans, and project
-guidance for that repository change. Do not block, reverse, or reroute them.
-Arrange source/context synchronization afterward when needed. Intervene only when
-an external or destructive action lacks authority or a real platform/safety
-prohibition applies.
+Direct Planner/Worker user decisions supersede source scope, prior plans and project
+guidance. Do not block, reverse, or reroute them. Synchronize context afterward. Intervene only for missing
+external/destructive authority or an actual platform/safety prohibition.
 
-Route one independently deliverable outcome. Classify minimal required
-implementation and real blast radius, not ticket length. Return combined outcomes to
-Refinement for splitting and prescriptive issues for subtraction; no boilerplate.
+Route one deliverable outcome by minimal required implementation and real blast radius. Return
+combined outcomes to Refinement for splitting and prescriptive issues for subtraction.
 
 ## Start work
 
 Start only a user-selected work item from the conversation, a document or tracker.
-Read its normalized context and dependency neighborhood once; verify readiness, blockers, existing tasks,
-branches/worktrees/PRs, hook trust, and the four-Worker limit; then run
-`delivery-preflight/v1`. Query the backlog only for explicit backlog-wide
-prioritization. Repeat source queries only after failure or incomplete results.
+Read its context and known dependency neighborhood once. Check readiness, completion,
+blockers, active families, ownership, branches/worktrees/PRs, hook trust and the
+four-Worker limit. Only when selected work or that neighborhood contains hard or
+coordination relationships, run `assess-delivery-preflight.mjs` with `delivery-preflight/v1`.
+Dependency-free work skips both helper and packet, including unrelated Coordinator
+items. Query the backlog only for explicit backlog-wide prioritization.
 
-Hard prerequisites require a verified directed dependency in local context
-or the selected source and a declared
-merge/Done milestone. Missing verification returns to Refinement. Coordination-only
-relationships require a non-overlapping ownership boundary.
+Hard prerequisites require a verified directed dependency and merge/Done milestone
+in context or the selected source. Return unverified links to Refinement.
+Coordination-only relationships require a non-overlapping ownership boundary.
 
 Do not create a Worker to reserve capacity. Count Planner-only families toward
 four delivery slots. Creation requires a runnable work item, staged context, recorded
@@ -43,12 +41,12 @@ Write JSON input with `apply_patch`, then pipe it into
 `materialize-task-context.mjs stage`; never embed task text in shell code.
 Run materialization, registration and branch creation separately. Never disable
 a policy check to recover.
-Record `execution-route/v2`: bounded/routine Luna/xhigh; standard/decision-complete
-complex Luna/max; GPT-5.6 Sol/high or xhigh only for concrete remaining reasoning/risk.
+Record `execution-route/v2` once with `task-state.mjs record-route` (classification,
+rationale and risk signals); `workflow.json` and `lib/runtime-policy.mjs` own runtime settings.
 Planning difficulty never promotes a Worker. Preserve active routes.
 Create the reserved `codex/task-n-<slug>` branch at
 the verified current `main`, then create `[TASK-N] Planner` as a managed worktree
-from that existing branch with explicit model/thinking arguments (`gpt-6-astra`/`xhigh`).
+from that existing branch with the helper's explicit model/thinking arguments.
 The Local Environment and synchronous UserPromptSubmit prepare dependencies;
 the latter attaches the branch, hydrates context and registers the Planner first.
 SessionStart is read-only. The Coordinator owns both paths.
@@ -56,9 +54,11 @@ Never delegate configured setup steps to the Planner or Worker.
 After bootstrap, the Worker owns bounded local environment repairs and CI.
 
 Use `prepare-worker-bootstrap.mjs --role planner --coordinator <this-task-id>`
-with `.agents/task-state/TASK-N-bootstrap-input.json` staged before creation;
-send its prompt unchanged. Inspect the hook's local registration; never race
-setup with manual repairs. On failure, resolve the reported cause before retrying.
+in the primary checkout with bootstrap identity; omit `executionRoute`.
+It reads saved state and writes nothing. Stage its returned `bootstrap` at
+`.agents/task-state/TASK-N-bootstrap-input.json` before creation; send its prompt
+unchanged with its runtime. Inspect hook registration; never race setup with
+manual repairs. Resolve failures before retrying.
 No Worker exists yet. The user discusses and approves the Planner-owned Markdown
 file in that task. Omit planning only for an already supplied approved plan or
 explicit user waiver; retain the established direct Worker bootstrap in that case.
@@ -69,12 +69,28 @@ then wait for the Planner turn to complete so its approval is in forked history.
 Recheck capacity/dependencies only if materially changed. Use `fork_thread` with
 the Planner ID and `environment.type="same-directory"`; set the Worker title
 `[TASK-N] <summary>` and register it in that same checkout. Generate its prompt
-with `--role worker --plan-revision N`; send it with explicit model/thinking from
-the execution route. No second worktree, install, planning pass or approval.
-Deduplicate `task-n:worker:start:<revision>` against state and target messages;
+with `--role worker --plan-revision N --worktree <absolute-worker-checkout>`;
+send its explicit model/thinking from the latest recorded route. No second
+worktree, install, planning pass or approval. Deduplicate its `worker-route:N`
+event against state and target messages, then record it after confirmed delivery;
 an ambiguous fork requires an ID/title check, never an automatic refork.
 
 ## Coordinate compactly
+
+On a Worker escalation request, wait for that turn to complete and confirm no
+checkout gate lease is active. In its checkout run `task-state.mjs escalate-route`
+with the expected revision, destination classification, concrete risk signals and
+evidence-based rationale. Only upward moves are allowed: bounded/routine →
+standard/complex → high-risk → exceptional. Legacy routes start at revision 1.
+Generate Worker continuation again from the latest saved state and continue the
+same registered Worker using explicit model/thinking. Preserve plan approval,
+checkout, progress and completed validation. Check `deliveredEvents` before
+sending; after an ambiguous dispatch inspect that chat for the route event before
+resending. Record the event only after confirmed delivery. A stale revision needs
+a state reread, never a blind retry. If Codex rejects a runtime, report the exact
+model/effort and error for configuration correction; never silently downgrade or
+substitute another model. Existing recorded runtimes are snapshots, not policy
+revalidations against today's config.
 
 Intervene for starts, approved-plan handoffs, cross-worker decisions and checkout
 recovery/retirement.
@@ -87,8 +103,9 @@ returns one `refinement-result/v1`. Wait once with a cursor; after ambiguity,
 perform one target check and one targeted source verification. Never poll
 transcripts or resend unchanged messages.
 
-Workers create and reuse at most one named same-directory fork per gate,
-Reviewer before Tester; recursive or parallel gate forks are protocol defects.
+Workers create fresh Reviewer/Tester chats with `create_thread`, then reuse each
+registered chat for corrections, Reviewer before Tester. No subagents, recursive
+gates or parallel checkout gates. Existing families and gate chats remain valid.
 Do not relay routine gate or CI activity.
 
 ## Recover and retire

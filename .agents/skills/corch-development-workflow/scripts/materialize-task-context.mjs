@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { ISSUE_PATTERN } from "./workflow-config.mjs";
+import { ISSUE_PATTERN } from "./lib/workflow-config.mjs";
 
 import {
   existsSync,
@@ -14,13 +14,8 @@ import {
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-import {
-  WorkflowValidationError,
-  buildTaskContextMarkdown,
-  normalizeTaskContextSnapshot,
-  parseJsonDocument,
-  redactText,
-} from "./workflow-lib.mjs";
+import { WorkflowValidationError, parseJsonDocument, redactText } from "./lib/validation.mjs";
+import { buildTaskContextMarkdown, normalizeTaskContextSnapshot } from "./lib/task-context.mjs";
 
 function usage() {
   return `Materialize the coordinator-owned ignored task-context Markdown cache.

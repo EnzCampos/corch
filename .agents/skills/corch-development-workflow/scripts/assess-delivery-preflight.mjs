@@ -1,11 +1,7 @@
 #!/usr/bin/env node
 
-import {
-  WorkflowValidationError,
-  assessDeliveryPreflight,
-  parseJsonDocument,
-  redactText,
-} from "./workflow-lib.mjs";
+import { WorkflowValidationError, parseJsonDocument, redactText } from "./lib/validation.mjs";
+import { assessDeliveryPreflight } from "./lib/task-context.mjs";
 
 function usage() {
   return `Assess normalized work-item delivery dependencies before creating Workers.

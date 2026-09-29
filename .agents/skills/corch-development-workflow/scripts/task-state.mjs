@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-import { ISSUE_PATTERN } from "./workflow-config.mjs";
+import { ISSUE_PATTERN } from "./lib/workflow-config.mjs";
 
 import {
+  closeSync,
   existsSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -12,22 +14,19 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
+import { ROUTE_LEVELS } from "./lib/runtime-policy.mjs";
+import { validateRouteState, verifyWorkerCheckout, sameCheckout, TASK_STATE_SCHEMA, WORKFLOW_PROTOCOL } from "./lib/delivery-state.mjs";
 
-import {
-  TASK_STATE_SCHEMA,
-  WORKFLOW_PROTOCOL,
-  WorkflowValidationError,
-  createExecutionRoute,
-  parseJsonDocument,
-  redactText,
-  validateExecutionRoute,
-  validatePlanReference,
-  MARKDOWN_PLAN_SCHEMA,
-} from "./workflow-lib.mjs";
+import { WorkflowValidationError, parseJsonDocument, redactText } from "./lib/validation.mjs";
+import { createExecutionRoute, validatePlanReference, MARKDOWN_PLAN_SCHEMA } from "./lib/bootstrap.mjs";
 
 const ROLE_PATTERN = /^(worker|planner|reviewer|tester)$/;
 const SHA_PATTERN = /^[0-9a-f]{40}$/;
 const EVENT_PATTERN = /^[a-z0-9][a-z0-9._:-]{2,199}$/;
+const STATE_LOCK_TIMEOUT_MS = 5_000;
+const STATE_LOCK_RETRY_MS = 50;
 
 function usage() {
   return `Maintain ignored task-family identity and event-deduplication state.
@@ -41,6 +40,8 @@ Usage:
     --rationale <text> [--signal <name>]...
   node task-state.mjs record-context --issue TASK-N --revision N \\
     --path .agents/task-context/TASK-N.md
+  node task-state.mjs escalate-route --issue TASK-N --expected-revision N \\
+    --classification standard|complex|high-risk|exceptional --signal <name> --rationale <evidence>
   node task-state.mjs record-plan --issue TASK-N \\
     --revision 1 --path .agents/task-state/TASK-N-plan.md
   node task-state.mjs record-event --issue TASK-N --event <stable-key> --target <thread-id>
@@ -48,6 +49,8 @@ Usage:
   node task-state.mjs begin-gate --issue TASK-N --gate review|test --thread <id> \
     --worktree <absolute-path> --sha <40-hex>
   node task-state.mjs end-gate --issue TASK-N --gate review|test --thread <id>
+  node task-state.mjs claim-gate --issue TASK-N --gate review|test --thread <session-id> \\
+    --worktree <absolute-worker-checkout> --sha <40-hex>
   node task-state.mjs retire-task --issue TASK-N --role worker|planner|reviewer|tester --thread <id>
 
 Planner registration requires --kind task and identifies a visible Codex task.
@@ -84,6 +87,8 @@ function parseArguments(argv) {
       args.pullRequestNumber = Number(argv[++index]);
     } else if (current === "--classification") {
       args.classification = argv[++index];
+    } else if (current === "--expected-revision") {
+      args.expectedRevision = Number(argv[++index]);
     } else if (current === "--rationale") {
       args.rationale = argv[++index];
     } else if (current === "--signal") {
@@ -119,6 +124,8 @@ function parseArguments(argv) {
       "show",
       "register-task",
       "record-route",
+      "escalate-route",
+      "claim-gate",
       "record-context",
       "record-plan",
       "record-event",
@@ -129,7 +136,7 @@ function parseArguments(argv) {
     ]).has(args.command)
   ) {
     throw new WorkflowValidationError([
-      "select show, register-task, record-route, record-context, record-plan, record-event, record-gate, begin-gate, end-gate, or retire-task",
+      "select show, register-task, record-route, escalate-route, record-context, record-plan, record-event, record-gate, claim-gate, begin-gate, end-gate, or retire-task",
     ]);
   }
   if (!ISSUE_PATTERN.test(args.issueKey ?? "")) {
@@ -145,12 +152,16 @@ function parseArguments(argv) {
     }
   }
   if (
-    args.command === "record-route" &&
+    ["record-route", "escalate-route"].includes(args.command) &&
     (!args.classification || !args.rationale)
   ) {
     throw new WorkflowValidationError([
-      "record-route requires --classification and --rationale",
+      `${args.command} requires --classification and --rationale`,
     ]);
+  }
+  if (args.command === "escalate-route" &&
+      (!Number.isSafeInteger(args.expectedRevision) || args.expectedRevision < 1 || args.riskSignals.length === 0)) {
+    throw new WorkflowValidationError(["escalate-route requires a positive --expected-revision and concrete --signal evidence with --rationale"]);
   }
   if (
     args.command === "record-context" &&
@@ -209,19 +220,22 @@ function parseArguments(argv) {
     }
   }
   if (
-    new Set(["begin-gate", "end-gate"]).has(args.command) &&
+    new Set(["claim-gate", "begin-gate", "end-gate"]).has(args.command) &&
     (!new Set(["review", "test"]).has(args.gate) || !args.threadId)
   ) {
     throw new WorkflowValidationError([
       "checkout gate operations require --gate and --thread",
     ]);
   }
+  if (args.command === "claim-gate" && !/^[a-zA-Z0-9_-]{1,128}$/.test(args.threadId ?? "")) {
+    throw new WorkflowValidationError(["claim-gate requires a validated SessionStart --thread ID"]);
+  }
   if (
-    args.command === "begin-gate" &&
+    ["claim-gate", "begin-gate"].includes(args.command) &&
     (!SHA_PATTERN.test(args.observedSha ?? "") || !args.worktree)
   ) {
     throw new WorkflowValidationError([
-      "begin-gate requires --worktree and --sha",
+      `${args.command} requires --worktree and --sha`,
     ]);
   }
   if (args.worktree !== undefined && !path.isAbsolute(args.worktree)) {
@@ -236,9 +250,9 @@ function parseArguments(argv) {
   return args;
 }
 
-function repositoryRoot() {
+function repositoryRoot(cwd = process.cwd()) {
   const result = spawnSync("git", ["rev-parse", "--show-toplevel"], {
-    cwd: process.cwd(),
+    cwd,
     encoding: "utf8",
     shell: false,
     windowsHide: true,
@@ -324,7 +338,9 @@ function validateState(value, issueKey) {
     throw new WorkflowValidationError(["task-state is incomplete"]);
   }
   if (value.executionRoute !== undefined) {
-    validateExecutionRoute(value.executionRoute, { issueKey });
+    validateRouteState(value);
+  } else if (value.executionRouteRevision !== undefined || value.executionRouteHistory !== undefined) {
+    throw new WorkflowValidationError(["route metadata requires an execution route"]);
   }
   if (value.implementationPlan !== undefined) {
     validatePlanReference(value.implementationPlan, issueKey);
@@ -387,13 +403,102 @@ function writeState(targetPath, value) {
   }
 }
 
-function main() {
+function readLockOwner(lockPath) {
+  const stat = lstatSync(lockPath);
+  if (!stat.isFile() || stat.isSymbolicLink()) {
+    throw new Error("lock must be a regular file");
+  }
+  const owner = JSON.parse(readFileSync(lockPath, "utf8"));
+  if (
+    !Number.isInteger(owner?.pid) ||
+    owner.pid < 1 ||
+    typeof owner.token !== "string" ||
+    !owner.token
+  ) {
+    throw new Error("lock owner is invalid");
+  }
+  return owner;
+}
+
+async function withStateLock(targetPath, action) {
+  const lockPath = `${targetPath}.lock`;
+  const owner = { pid: process.pid, token: randomUUID() };
+  const recovery = `Verify that no task-state writer is running before removing ${path.basename(lockPath)}; then retry. Do not clear the checkout gate lease.`;
+  const fail = (reason) => new WorkflowValidationError([
+    `Task-state lock ${reason}. ${recovery}`,
+  ]);
+  const deadline = Date.now() + STATE_LOCK_TIMEOUT_MS;
+  let descriptor;
+  while (true) {
+    try {
+      descriptor = openSync(lockPath, "wx");
+      break;
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      let existing;
+      let incompleteOwner = false;
+      try {
+        existing = readLockOwner(lockPath);
+        process.kill(existing.pid, 0);
+      } catch (probe) {
+        if (probe.code === "ENOENT") continue;
+        if (probe.code === "ESRCH") {
+          // The owner may have released its lock and exited since our read.
+          try {
+            const current = readLockOwner(lockPath);
+            if (current.pid !== existing.pid || current.token !== existing.token) continue;
+          } catch (refresh) {
+            if (refresh.code === "ENOENT" || refresh instanceof SyntaxError) continue;
+            throw fail("ownership cannot be verified");
+          }
+          throw fail("has a stale owner");
+        }
+        // Exclusive creation precedes writing the owner; a peer may see partial JSON.
+        if (!(probe instanceof SyntaxError)) {
+          throw fail("ownership cannot be verified");
+        }
+        incompleteOwner = true;
+      }
+      if (Date.now() >= deadline) {
+        throw fail(incompleteOwner
+          ? "ownership cannot be verified after 5 seconds"
+          : "timed out after 5 seconds");
+      }
+      await delay(STATE_LOCK_RETRY_MS);
+    }
+  }
+  try {
+    writeFileSync(descriptor, JSON.stringify(owner), "utf8");
+    closeSync(descriptor);
+    descriptor = undefined;
+    return action();
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+    try {
+      const current = readLockOwner(lockPath);
+      if (current.pid !== owner.pid || current.token !== owner.token) {
+        throw fail("ownership changed before release");
+      }
+      rmSync(lockPath);
+    } catch (error) {
+      if (error.code !== "ENOENT") {
+        if (error instanceof WorkflowValidationError) throw error;
+        throw fail("could not be verified or released");
+      }
+    }
+  }
+}
+
+async function main() {
   const args = parseArguments(process.argv.slice(2));
   if (args.help) {
     process.stdout.write(`${usage()}\n`);
     return;
   }
-  const checkoutRoot = repositoryRoot();
+  const checkoutRoot = repositoryRoot(args.command === "claim-gate" ? args.worktree : process.cwd());
+  if (args.command === "claim-gate" && !sameCheckout(checkoutRoot, args.worktree)) {
+    throw new WorkflowValidationError(["claim-gate requires the Worker checkout root"]);
+  }
   const sharedRoot = taskStateRoot(checkoutRoot);
   const localRoot = isLinkedWorktree(checkoutRoot) ? checkoutRoot : sharedRoot;
   const targetPath = stateLocation(localRoot, args.issueKey);
@@ -403,15 +508,22 @@ function main() {
     "task-state",
     `${args.issueKey}.json`,
   );
-  const sourcePath =
-    existsSync(targetPath) || targetPath === sharedPath
-      ? targetPath
-      : sharedPath;
-  const state = readState(sourcePath, args.issueKey);
+  const readCurrentState = () =>
+    readState(
+      existsSync(targetPath) || targetPath === sharedPath ? targetPath : sharedPath,
+      args.issueKey,
+    );
   if (args.command === "show") {
-    process.stdout.write(`${JSON.stringify(state, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify(readCurrentState(), null, 2)}\n`);
     return;
   }
+  const result = await withStateLock(targetPath, () =>
+    updateState(args, readCurrentState(), checkoutRoot, targetPath),
+  );
+  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+}
+
+function updateState(args, state, checkoutRoot, targetPath) {
   let status = "recorded";
   if (args.command === "register-task") {
     const next = {
@@ -453,7 +565,8 @@ function main() {
     }
   } else if (args.command === "record-route") {
     const next = createExecutionRoute(args);
-    if (JSON.stringify(state.executionRoute) === JSON.stringify(next)) {
+    if (state.executionRoute && ["classification", "rationale", "riskSignals"].every((key) =>
+      JSON.stringify(state.executionRoute[key]) === JSON.stringify(next[key]))) {
       status = "already-recorded";
     } else if (state.executionRoute) {
       throw new WorkflowValidationError([
@@ -461,6 +574,27 @@ function main() {
       ]);
     } else {
       state.executionRoute = next;
+      state.executionRouteRevision = 1;
+      state.executionRouteHistory = [];
+    }
+  } else if (args.command === "escalate-route") {
+    const revision = validateRouteState(state);
+    if (state.activeCheckoutGate) throw new WorkflowValidationError(["end the active checkout gate before escalation"]);
+    verifyWorkerCheckout(state, checkoutRoot);
+    const next = createExecutionRoute(args);
+    // Retry identity describes the request, not today's potentially edited configuration.
+    const sameRequest = ["classification", "rationale", "riskSignals"].every((key) =>
+      JSON.stringify(state.executionRoute[key]) === JSON.stringify(next[key]));
+    if (args.expectedRevision === revision - 1 && sameRequest) {
+      status = "already-recorded";
+    } else {
+      if (args.expectedRevision !== revision) throw new WorkflowValidationError(["stale execution route revision; read current state before escalating"]);
+      if (ROUTE_LEVELS[next.classification] <= ROUTE_LEVELS[state.executionRoute.classification]) {
+        throw new WorkflowValidationError(["escalation must move upward: bounded/routine -> standard/complex -> high-risk -> exceptional"]);
+      }
+      state.executionRouteHistory = [...(state.executionRouteHistory ?? []), { revision, route: state.executionRoute }];
+      state.executionRoute = next;
+      state.executionRouteRevision = revision + 1;
     }
   } else if (args.command === "record-context") {
     const next = {
@@ -542,11 +676,20 @@ function main() {
     } else {
       state.gates[args.gate] = next;
     }
-  } else if (args.command === "begin-gate") {
+  } else if (["begin-gate", "claim-gate"].includes(args.command)) {
     const role = args.gate === "review" ? "reviewer" : "tester";
     const worktree = path.resolve(args.worktree);
     const workerTask = state.tasks.worker;
-    const roleTask = state.tasks[role];
+    let roleTask = state.tasks[role];
+    if (args.command === "claim-gate") {
+      verifyWorkerCheckout(state, worktree, args.observedSha);
+      if (roleTask && !roleTask.retired && roleTask.threadId !== args.threadId) {
+        throw new WorkflowValidationError([`${role} is already registered to another active task`]);
+      }
+      if (!roleTask || roleTask.retired) {
+        roleTask = { threadId: args.threadId, worktree, branch: workerTask.branch, retired: false };
+      }
+    }
     if (!workerTask || workerTask.retired || !workerTask.worktree) {
       throw new WorkflowValidationError([
         "an active Worker with a registered worktree is required",
@@ -584,6 +727,7 @@ function main() {
     } else {
       state.activeCheckoutGate = next;
     }
+    if (args.command === "claim-gate") state.tasks[role] = roleTask;
   } else if (args.command === "end-gate") {
     const active = state.activeCheckoutGate;
     if (!active) {
@@ -611,13 +755,11 @@ function main() {
   if (status !== "already-recorded") {
     writeState(targetPath, state);
   }
-  process.stdout.write(
-    `${JSON.stringify({ status, issueKey: args.issueKey }, null, 2)}\n`,
-  );
+  return { status, issueKey: args.issueKey };
 }
 
 try {
-  main();
+  await main();
 } catch (error) {
   const messages =
     error instanceof WorkflowValidationError ? error.errors : [error.message];

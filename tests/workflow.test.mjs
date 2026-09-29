@@ -16,37 +16,15 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
+import { createHash } from "node:crypto";
 import { parse as parseYaml } from "yaml";
 import { run as runWorktreeSetupCommand } from "../.agents/skills/corch-development-workflow/scripts/prepare-worker-worktree.mjs";
 
-import {
-  GATE_RISK_FIELDS,
-  WorkflowValidationError,
-  assessDeliveryPreflight,
-  artifactMetadata,
-  buildEvidenceComment,
-  buildGateSelectionMarker,
-  buildPullRequestCommentMarker,
-  buildTaskContextMarkdown,
-  buildDeliveryTaskDispatch,
-  composeGateResult,
-  createExecutionRoute,
-  detectUnsafeText,
-  normalizeTaskContextSnapshot,
-  redactText,
-  reviewerThreadRuntimeArguments,
-  resolveEvidenceFiles,
-  testerThreadRuntimeArguments,
-  validateEvidenceProfile,
-  validateExecutionRoute,
-  validateGateResult,
-  validateGateSelection,
-  validateHandoffEvidence,
-  validateReadyHandoff,
-  validateRefinementResult,
-  validateWorkerBootstrap,
-  workerThreadRuntimeArguments,
-} from "../.agents/skills/corch-development-workflow/scripts/workflow-lib.mjs";
+import { GATE_RISK_FIELDS, composeGateResult, validateGateResult, validateGateSelection, validateReadyHandoff } from "../.agents/skills/corch-development-workflow/scripts/lib/gate-contracts.mjs";
+import { WorkflowValidationError, detectUnsafeText, redactText } from "../.agents/skills/corch-development-workflow/scripts/lib/validation.mjs";
+import { assessDeliveryPreflight, buildTaskContextMarkdown, normalizeTaskContextSnapshot, validateRefinementResult } from "../.agents/skills/corch-development-workflow/scripts/lib/task-context.mjs";
+import { artifactMetadata, buildEvidenceComment, buildGateSelectionMarker, buildPullRequestCommentMarker, resolveEvidenceFiles, validateEvidenceProfile, validateHandoffEvidence } from "../.agents/skills/corch-development-workflow/scripts/lib/report.mjs";
+import { buildDeliveryTaskDispatch, createExecutionRoute, reviewerThreadRuntimeArguments, testerThreadRuntimeArguments, validateExecutionRoute, validateWorkerBootstrap, workerThreadRuntimeArguments } from "../.agents/skills/corch-development-workflow/scripts/lib/bootstrap.mjs";
 
 const SCRIPT_DIRECTORY = fileURLToPath(
   new URL(
@@ -473,7 +451,7 @@ test("a partial command waiver removes aggregate artifact minima while retaining
     const filename = path.join(root, "partial-handoff.json");
     writeFileSync(filename, JSON.stringify(value));
     const result = command(root, process.execPath, [
-      path.join(SCRIPT_DIRECTORY, "prepare-evidence.mjs"),
+      path.join(SCRIPT_DIRECTORY, "prepare-report.mjs"),
       "--issue",
       "TASK-42",
       "--pr",
@@ -681,7 +659,7 @@ test("waived handoffs validate and publish without fabricated runtime artifacts 
       "codex/task-42-recovery",
     ];
     const selectionResult = command(root, process.execPath, [
-      path.join(SCRIPT_DIRECTORY, "validate-gate-selection.mjs"),
+      path.join(SCRIPT_DIRECTORY, "gate.mjs"), "selection",
       ...identity,
       "--selection",
       filename,
@@ -689,15 +667,15 @@ test("waived handoffs validate and publish without fabricated runtime artifacts 
     assert.equal(selectionResult.status, 0, selectionResult.stderr);
     const publish = () =>
       command(root, process.execPath, [
-        path.join(SCRIPT_DIRECTORY, "prepare-evidence.mjs"),
+        path.join(SCRIPT_DIRECTORY, "prepare-report.mjs"),
         ...identity,
         "--gate",
         "handoff",
-        "--profile",
-        "mixed",
         "--result",
         filename,
         "--dry-run",
+        "--evidence-url",
+        "https://example.atlassian.net/browse/TASK-42?focusedCommentId=123",
       ]);
     const published = publish();
     assert.equal(published.status, 0, published.stderr);
@@ -706,26 +684,9 @@ test("waived handoffs validate and publish without fabricated runtime artifacts 
       JSON.parse(published.stdout).marker,
       JSON.parse(selectionResult.stdout).marker,
     );
-    const pr = command(root, process.execPath, [
-      path.join(SCRIPT_DIRECTORY, "prepare-pr-comment.mjs"),
-      ...identity,
-      "--gate",
-      "handoff",
-      "--result",
-      filename,
-      "--evidence-url",
-      "https://example.atlassian.net/browse/TASK-42?focusedCommentId=123",
-    ]);
-    assert.equal(pr.status, 0, pr.stderr);
-    const body = JSON.parse(pr.stdout).body;
-    const jira = buildEvidenceComment({
-      marker: "fixture",
-      result: value,
-      profile: "mixed",
-      attachments: [],
-      gate: "handoff",
-    });
-    for (const text of [body, jira]) {
+    const report = JSON.parse(published.stdout);
+    const body = report.prComment.body;
+    for (const text of [body, report.commentBody]) {
       assert.match(text, /[Ee]xplicit check waivers/);
       assert.match(text, /User decision/);
       assert.match(text, /NOT_VERIFIED/);
@@ -789,7 +750,7 @@ test("task-context/v3 renders compact planning data and rejects retired formats"
   );
 });
 
-test("execution-route/v2 selects current runtimes and rejects retired routes", () => {
+test("execution-route/v2 selects defaults and preserves historical runtime snapshots", () => {
   const cases = [
     ["bounded", "gpt-6-luna", "xhigh"],
     ["routine", "gpt-6-luna", "xhigh"],
@@ -817,20 +778,9 @@ test("execution-route/v2 selects current runtimes and rejects retired routes", (
     });
     if (model === "gpt-6-luna") {
       const persisted = { ...route, model: "gpt-5.6-luna" };
-      assert.throws(
-        () => workerThreadRuntimeArguments(persisted),
-        /model must/,
-      );
+      assert.equal(workerThreadRuntimeArguments(persisted).model, "gpt-5.6-luna");
       for (const effort of ["low", "medium"]) {
-        assert.throws(
-          () => validateExecutionRoute({ ...route, reasoningEffort: effort }),
-          /reasoningEffort must/,
-        );
-        assert.throws(
-          () =>
-            validateExecutionRoute({ ...persisted, reasoningEffort: effort }),
-          /reasoningEffort must/,
-        );
+        assert.equal(validateExecutionRoute({ ...persisted, reasoningEffort: effort }).reasoningEffort, effort);
       }
     }
   }
@@ -936,31 +886,29 @@ test("worker-bootstrap/v2 carries explicit runtime and destination authorization
     SCRIPT_DIRECTORY,
     "prepare-worker-bootstrap.mjs",
   );
-  const invokeBootstrap = (args) =>
-    command(process.cwd(), process.execPath, [bootstrapScript, ...args], {
-      input: JSON.stringify(bootstrap),
-    });
-  const dispatched = invokeBootstrap(["--coordinator", "coordinator-1"]);
-  assert.equal(dispatched.status, 0, dispatched.stderr);
-  assert.equal(JSON.parse(dispatched.stdout).title, plannerDispatch.title);
-  assert.deepEqual(
-    JSON.parse(dispatched.stdout).runtime,
-    plannerDispatch.runtime,
-  );
-  const approvedDispatch = invokeBootstrap([
-    "--role",
-    "worker",
-    "--plan-revision",
-    "2",
-  ]);
-  assert.equal(approvedDispatch.status, 0, approvedDispatch.stderr);
-  assert.deepEqual(
-    JSON.parse(approvedDispatch.stdout).runtime,
-    workerDispatch.runtime,
-  );
-  assert.equal(invokeBootstrap(["--role", "worker"]).status, 1);
-  assert.equal(invokeBootstrap(["--coordinator"]).status, 1);
-  assert.equal(invokeBootstrap(["--unknown", "value"]).status, 1);
+  withTempDirectory((root) => {
+    createGitRepository(root);
+    const recorded = command(root, process.execPath, [
+      path.join(SCRIPT_DIRECTORY, "task-state.mjs"), "record-route",
+      "--issue", route.issueKey, "--classification", route.classification,
+      "--rationale", route.rationale,
+    ]);
+    assert.equal(recorded.status, 0, recorded.stderr);
+    const invokeBootstrap = (args) =>
+      command(root, process.execPath, [bootstrapScript, ...args], {
+        input: JSON.stringify(bootstrap),
+      });
+    const dispatched = invokeBootstrap(["--coordinator", "coordinator-1"]);
+    assert.equal(dispatched.status, 0, dispatched.stderr);
+    assert.equal(JSON.parse(dispatched.stdout).title, plannerDispatch.title);
+    assert.deepEqual(JSON.parse(dispatched.stdout).runtime, plannerDispatch.runtime);
+    assert.deepEqual(JSON.parse(dispatched.stdout).bootstrap, bootstrap);
+    // Worker continuation also requires a registered checkout and current plan.
+    assert.equal(invokeBootstrap(["--role", "worker", "--plan-revision", "2"]).status, 1);
+    assert.equal(invokeBootstrap(["--role", "worker"]).status, 1);
+    assert.equal(invokeBootstrap(["--coordinator"]).status, 1);
+    assert.equal(invokeBootstrap(["--unknown", "value"]).status, 1);
+  });
   assert.throws(
     () => validateWorkerBootstrap({ ...bootstrap, planner: {} }),
     /planner is not supported/,
@@ -995,7 +943,7 @@ test("worker-bootstrap/v2 carries explicit runtime and destination authorization
   assert.match(plannerDispatch.prompt, /One approval covers that revision/);
 });
 
-test("execution-route/v2 rejects Terra, low effort, omitted runtime, and unsupported signals", () => {
+test("execution-route/v2 rejects malformed or omitted runtime and unsupported signals", () => {
   const route = createExecutionRoute({
     issueKey: "TASK-42",
     classification: "bounded",
@@ -1006,18 +954,18 @@ test("execution-route/v2 rejects Terra, low effort, omitted runtime, and unsuppo
   assert.equal(route.model, "gpt-6-luna");
   assert.equal(route.reasoningEffort, "xhigh");
   assert.throws(
-    () => validateExecutionRoute({ ...route, model: "gpt-5.6-terra" }),
-    /model must be gpt-6-luna/,
+    () => validateExecutionRoute({ ...route, model: "bad model\n" }),
+    /complete model\/reasoningEffort pair/,
   );
   assert.throws(
-    () => validateExecutionRoute({ ...route, reasoningEffort: "low" }),
-    /reasoningEffort must be xhigh/,
+    () => validateExecutionRoute({ ...route, reasoningEffort: "unknown" }),
+    /complete model\/reasoningEffort pair/,
   );
   const { model: omittedModel, ...withoutModel } = route;
   assert.equal(omittedModel, "gpt-6-luna");
   assert.throws(
     () => workerThreadRuntimeArguments(withoutModel),
-    /model must be gpt-6-luna/,
+    /complete model\/reasoningEffort pair/,
   );
   assert.throws(
     () =>
@@ -1031,41 +979,24 @@ test("execution-route/v2 rejects Terra, low effort, omitted runtime, and unsuppo
   );
 });
 
-test("execution route helper emits the contract or exact create_thread arguments", () => {
-  const script = path.join(SCRIPT_DIRECTORY, "select-execution-route.mjs");
-  const args = [
-    "--issue",
-    "TASK-58",
-    "--classification",
-    "bounded",
-    "--signal",
-    "infrastructureOrDeployment",
-    "--rationale",
-    "The local webhook receiver is bounded and decision-complete.",
-  ];
-  const routeResult = command(process.cwd(), process.execPath, [
-    script,
-    ...args,
-  ]);
-  assert.equal(routeResult.status, 0, routeResult.stderr);
-  const route = JSON.parse(routeResult.stdout);
-  assert.equal(route.schemaVersion, "execution-route/v2");
-  assert.equal(route.model, "gpt-6-luna");
-  assert.equal(route.reasoningEffort, "xhigh");
-  const creationResult = command(process.cwd(), process.execPath, [
-    script,
-    ...args,
-    "--create-thread-args",
-  ]);
-  assert.equal(creationResult.status, 0, creationResult.stderr);
-  assert.deepEqual(JSON.parse(creationResult.stdout), {
-    model: "gpt-6-luna",
-    thinking: "xhigh",
-  });
-  const help = command(process.cwd(), process.execPath, [script, "--help"]);
-  assert.equal(help.status, 0, help.stderr);
-  assert.match(help.stdout, /Terra and every low-effort route are unsupported/);
-});
+test("task state records the initial configured runtime without a separate selector", () =>
+  withTempDirectory((root) => {
+    createGitRepository(root);
+    const script = path.join(SCRIPT_DIRECTORY, "task-state.mjs");
+    const recorded = command(root, process.execPath, [
+      script, "record-route", "--issue", "TASK-58", "--classification", "bounded",
+      "--signal", "infrastructureOrDeployment",
+      "--rationale", "The local webhook receiver is bounded and decision-complete.",
+    ]);
+    assert.equal(recorded.status, 0, recorded.stderr);
+    const shown = command(root, process.execPath, [script, "show", "--issue", "TASK-58"]);
+    assert.equal(shown.status, 0, shown.stderr);
+    const route = JSON.parse(shown.stdout).executionRoute;
+    assert.equal(route.schemaVersion, "execution-route/v2");
+    assert.deepEqual(workerThreadRuntimeArguments(route), {
+      model: "gpt-6-luna", thinking: "xhigh",
+    });
+  }));
 
 test("task context records structured hard and coordination dependencies", () => {
   const normalized = normalizeTaskContextSnapshot(
@@ -1488,6 +1419,8 @@ test("gate amendments compose targeted corrections into complete v2 results", ()
   assert.equal(composed.observedSha, SHA_B);
   assert.equal(composed.acceptance.length, 1);
   assert.equal(composed.verdict, "APPROVED");
+  assert.throws(() => composeGateResult("reviewer", base, { ...amendment, issueKey: "TASK-43" }), /issueKey must match/);
+  assert.throws(() => composeGateResult("reviewer", base, { ...amendment, comparedFromSha: SHA_B }), /comparedFromSha must equal/);
   assert.throws(
     () =>
       composeGateResult("reviewer", base, { ...amendment, carryForward: [] }),
@@ -1606,11 +1539,12 @@ test("gate amendment helper writes a new validated result without shell redirect
       "utf8",
     );
     const relativeOutput = `.agents/evidence/TASK-42/${SHA_B}/review-result.json`;
-    const script = path.join(SCRIPT_DIRECTORY, "compose-gate-result.mjs");
+    const script = path.join(SCRIPT_DIRECTORY, "gate.mjs");
     const args = [
       script,
-      "--role",
-      "reviewer",
+      "compose",
+      "--gate",
+      "review",
       "--base",
       "base.json",
       "--amendment",
@@ -1618,6 +1552,10 @@ test("gate amendment helper writes a new validated result without shell redirect
       "--output",
       relativeOutput,
     ];
+    const preview = command(root, process.execPath, args.slice(0, -2));
+    assert.equal(preview.status, 0, preview.stderr);
+    assert.deepEqual(JSON.parse(preview.stdout), composeGateResult("reviewer", base, amendment));
+    assert.equal(existsSync(path.join(root, relativeOutput)), false);
     const first = command(root, process.execPath, args);
     assert.equal(first.status, 0, first.stderr);
     assert.deepEqual(JSON.parse(first.stdout), {
@@ -2555,11 +2493,12 @@ test("delta assessment distinguishes carry-forward, targeted delta, and rewritte
     git(root, ["add", "feature.js"]);
     git(root, ["commit", "-m", "feature"]);
     const second = git(root, ["rev-parse", "HEAD"]);
-    const script = path.join(SCRIPT_DIRECTORY, "assess-gate-delta.mjs");
+    const script = path.join(SCRIPT_DIRECTORY, "gate.mjs");
     const invoke = (from, to, impact) =>
       command(root, process.execPath, [
         script,
-        "--role",
+        "assess",
+        "--gate",
         "review",
         "--from",
         from,
@@ -2593,12 +2532,12 @@ test("delta assessment distinguishes carry-forward, targeted delta, and rewritte
     assert.equal(assessment.action, "coherent-recheck");
   }));
 
-test("PR comment preparation is text-only, optionally links published evidence, and never requests browser publication", () =>
+test("Unified report PR summary is text-only, optionally links published evidence, and never requests browser publication", () =>
   withTempDirectory((root) => {
     createGitRepository(root);
     const resultPath = path.join(root, "review.json");
     writeFileSync(resultPath, JSON.stringify(reviewResult()), "utf8");
-    const script = path.join(SCRIPT_DIRECTORY, "prepare-pr-comment.mjs");
+    const script = path.join(SCRIPT_DIRECTORY, "prepare-report.mjs");
     const prepared = command(root, process.execPath, [
       script,
       "--issue",
@@ -2607,6 +2546,8 @@ test("PR comment preparation is text-only, optionally links published evidence, 
       "9",
       "--gate",
       "review",
+      "--profile",
+      "general",
       "--head-branch",
       "codex/task-42-recovery",
       "--result",
@@ -2615,7 +2556,7 @@ test("PR comment preparation is text-only, optionally links published evidence, 
       "https://example.atlassian.net/browse/TASK-42?focusedCommentId=123",
     ]);
     assert.equal(prepared.status, 0, prepared.stderr);
-    const output = JSON.parse(prepared.stdout);
+    const output = JSON.parse(prepared.stdout).prComment;
     assert.deepEqual(output.nativeUploads, []);
     assert.equal(output.browserRequired, false);
     assert.match(output.body, /Delivery evidence/);
@@ -2677,7 +2618,7 @@ test("delivery evidence preparation is local-only and connector-ready", () =>
       "utf8",
     );
     const statusBeforePreparation = git(root, ["status", "--short"]);
-    const script = path.join(SCRIPT_DIRECTORY, "prepare-evidence.mjs");
+    const script = path.join(SCRIPT_DIRECTORY, "prepare-report.mjs");
     const published = command(root, process.execPath, [
       script,
       "--issue",
@@ -2730,6 +2671,136 @@ test("delivery evidence preparation is local-only and connector-ready", () =>
       destination: null,
     });
     assert.equal(git(root, ["status", "--short"]), statusBeforePreparation);
+  }));
+
+test("one report invocation renders consistent review, test and ready handoff views without writes", () =>
+  withTempDirectory((root) => {
+    createGitRepository(root);
+    const artifactPath = `.agents/evidence/TASK-42/${SHA_A}/checks.log`;
+    const log = "Focused checks: PASS\n";
+    mkdirSync(path.dirname(path.join(root, artifactPath)), { recursive: true });
+    writeFileSync(path.join(root, artifactPath), log);
+    const artifact = { path: artifactPath, caption: "Focused checks", acceptanceCriteria: ["One local context"] };
+    const skipped = { status: "SKIPPED", observedSha: null, summary: "Proportionate skip.", evidenceUrl: null };
+    const handoff = selection({
+      evidenceProfile: "backend",
+      acceptance: reviewResult().acceptance,
+      commands: [{ ...testResult().commands[0], command: "npm run verify:ci", artifacts: [artifact] }],
+      outcomes: {
+        review: skipped, test: skipped,
+        ci: { status: "PASS", observedSha: SHA_A, runUrl: "https://github.com/example/project/actions/runs/123", summary: "Current-head CI passed." },
+        warnings: ["Attachment support unavailable; evidence retained locally."],
+      },
+    });
+    for (const [gate, model] of [
+      ["review", reviewResult({ artifacts: [artifact] })],
+      ["test", testResult({ artifacts: [artifact] })],
+      ["handoff", handoff],
+    ]) {
+      const resultPath = path.join(root, "result.json");
+      const source = JSON.stringify(model);
+      writeFileSync(resultPath, source);
+      const status = git(root, ["status", "--short", "--untracked-files=all"]);
+      const args = [path.join(SCRIPT_DIRECTORY, "prepare-report.mjs"),
+        "--issue", "TASK-42", "--pr", "9", "--gate", gate,
+        "--head-branch", "codex/task-42-recovery", "--result", resultPath,
+        ...(gate === "handoff" ? [] : ["--profile", "backend"])];
+      const invoke = (extra = []) => command(root, process.execPath, [...args, ...extra]);
+      const prepared = invoke();
+      assert.equal(prepared.status, 0, prepared.stderr);
+      const report = JSON.parse(prepared.stdout);
+      assert.equal(report.observedSha, SHA_A);
+      assert.equal(report.result, model.schemaVersion);
+      assert.equal(report.prComment.marker, buildPullRequestCommentMarker({
+        issueKey: model.issueKey, pullRequestNumber: 9, observedSha: SHA_A, gate,
+      }));
+      assert.equal(report.marker, gate === "handoff"
+        ? buildGateSelectionMarker({ issueKey: model.issueKey, pullRequestNumber: 9,
+            observedSha: SHA_A, review: "skipped", test: "skipped" })
+        : `[corch-validation:v2 schema=${model.schemaVersion} issue=TASK-42 observed=${SHA_A} gate=${gate}]`);
+      for (const body of [report.commentBody, report.prComment.body]) {
+        assert.ok(body.includes(SHA_A));
+        assert.ok(body.includes(model.summary));
+        assert.ok(body.includes("One local context"));
+        if (gate === "handoff") {
+          assert.match(body, /Reviewer: SKIPPED|Reviewer: \*\*SKIPPED/);
+          assert.match(body, /CI: PASS|CI: \*\*PASS/);
+        } else assert.ok(body.includes(model.verdict));
+      }
+      if (gate === "handoff") assert.ok(report.commentBody.includes(handoff.outcomes.warnings[0]));
+      assert.deepEqual(report.publication, { performed: false, destination: null });
+      assert.equal(report.prComment.evidenceUrl, null);
+      assert.equal(report.files.length, 1);
+      const digest = createHash("sha256").update(log).digest("hex");
+      assert.deepEqual(report.files[0], {
+        filename: `TASK-42_${SHA_A.slice(0, 12)}_${gate}_1_${digest.slice(0, 12)}_checks.log`,
+        caption: artifact.caption, acceptanceCriteria: artifact.acceptanceCriteria,
+        extension: ".log", sha256: digest, size: Buffer.byteLength(log),
+      });
+      const repeated = invoke();
+      assert.equal(repeated.status, 0, repeated.stderr);
+      assert.deepEqual(JSON.parse(repeated.stdout), report);
+      const dryRun = invoke(["--dry-run"]);
+      assert.equal(dryRun.status, 0, dryRun.stderr);
+      assert.deepEqual(JSON.parse(dryRun.stdout), { ...report, status: "dry-run" });
+      if (gate === "handoff") {
+        const mismatch = invoke(["--profile", "frontend"]);
+        assert.equal(mismatch.status, 1);
+        assert.equal(mismatch.stdout, "");
+        assert.match(mismatch.stderr, /profile must match/);
+      }
+      assert.equal(readFileSync(resultPath, "utf8"), source);
+      assert.equal(readFileSync(path.join(root, artifactPath), "utf8"), log);
+      assert.equal(git(root, ["status", "--short", "--untracked-files=all"]), status);
+    }
+  }));
+
+test("report failures emit neither view and retain evidence and identity safeguards", () =>
+  withTempDirectory((root) => {
+    createGitRepository(root);
+    const directory = `.agents/evidence/TASK-42/${SHA_A}`;
+    mkdirSync(path.join(root, directory, "nested"), { recursive: true });
+    writeFileSync(path.join(root, directory, "safe.log"), "Checks passed.\n");
+    writeFileSync(path.join(root, directory, "nested/safe.log"), "Checks passed.\n");
+    writeFileSync(path.join(root, directory, "unsafe.log"), "token=" + "z".repeat(30));
+    writeFileSync(path.join(root, directory, "invalid.png"), "not a screenshot");
+    const artifact = (filename, overrides = {}) => ({
+      path: `${directory}/${filename}`, caption: "Focused evidence",
+      acceptanceCriteria: ["One local context"], ...overrides,
+    });
+    const invoke = (model, gate = "review", profile = "general", extra = []) => {
+      writeFileSync(path.join(root, "result.json"), JSON.stringify(model));
+      return command(root, process.execPath, [path.join(SCRIPT_DIRECTORY, "prepare-report.mjs"),
+        "--issue", "TASK-42", "--pr", "9", "--gate", gate,
+        "--head-branch", "codex/task-42-recovery", "--result", "result.json",
+        ...(profile ? ["--profile", profile] : []), ...extra]);
+    };
+    const cases = [
+      [reviewResult({ artifacts: [artifact("missing.log")] }), "review", "general", /ENOENT/],
+      [reviewResult({ artifacts: [artifact("unsafe.log")] }), "review", "general", /unsafe data/],
+      [reviewResult({ artifacts: [artifact("invalid.png")] }), "review", "general", /structurally valid image/],
+      [reviewResult({ artifacts: [artifact("safe.log"), artifact("nested/safe.log")] }), "review", "general", /duplicate evidence filename/],
+      [reviewResult({ artifacts: [artifact("safe.log", { path: "README.md" })] }), "review", "general", /must stay under/],
+      [reviewResult({ artifacts: [artifact("safe.log", { caption: "" })] }), "review", "general", /caption/],
+      [reviewResult({ artifacts: [artifact("safe.log", { acceptanceCriteria: [] })] }), "review", "general", /acceptance/],
+      [testResult(), "test", "backend", /requires a bounded log/],
+      [testResult({ artifacts: [artifact("safe.log")] }), "test", "frontend", /requires a screenshot/],
+      [reviewResult(), "review", null, /missing arguments: profile/],
+      [testResult(), "test", null, /missing arguments: profile/],
+      [waivedSelection(), "handoff", "frontend", /profile must match/],
+      [selection(), "handoff", null, /requires gate outcomes/],
+      [waivedSelection(), "handoff", null, /expected identity/, ["--pr", "10"]],
+    ];
+    for (const [model, gate, profile, error, extra] of cases) {
+      const rejected = invoke(model, gate, profile, extra);
+      assert.equal(rejected.status, 1);
+      assert.equal(rejected.stdout, "", rejected.stderr);
+      assert.match(rejected.stderr, error);
+      assert.doesNotMatch(rejected.stderr, /z{30}/);
+    }
+    const missingValue = invoke(reviewResult(), "review", "general", ["--evidence-url"]);
+    assert.equal(missingValue.status, 1);
+    assert.match(missingValue.stderr, /requires a value/);
   }));
 
 test("bounded checks retain sanitized logs and expose only compact summaries", () =>
@@ -2868,7 +2939,7 @@ test("local handoff works without tracker credentials or an external evidence UR
       JSON.stringify(waivedSelection()),
       "utf8",
     );
-    const script = path.join(SCRIPT_DIRECTORY, "prepare-pr-comment.mjs");
+    const script = path.join(SCRIPT_DIRECTORY, "prepare-report.mjs");
     const args = [
       script,
       "--issue",
@@ -2884,7 +2955,7 @@ test("local handoff works without tracker credentials or an external evidence UR
     ];
     const prepared = command(root, process.execPath, args);
     assert.equal(prepared.status, 0, prepared.stderr);
-    const output = JSON.parse(prepared.stdout);
+    const output = JSON.parse(prepared.stdout).prComment;
     assert.equal(output.evidenceUrl, null);
     assert.match(
       output.body,
@@ -2912,7 +2983,7 @@ test("local handoff works without tracker credentials or an external evidence UR
     ]);
     assert.equal(linked.status, 0, linked.stderr);
     assert.equal(
-      JSON.parse(linked.stdout).evidenceUrl,
+      JSON.parse(linked.stdout).prComment.evidenceUrl,
       "https://linear.app/example/issue/ENG-9",
     );
   }));
@@ -2928,10 +2999,10 @@ test("role-specific skills are self-contained while sharing one workflow core", 
     "utf8",
   );
   const roles = new Map([
-    ["corch-delivery-coordinator", [/delivery-preflight\/v1/, 6_500]],
+    ["corch-delivery-coordinator", [/delivery-preflight\/v1/, 7_500]],
     ["corch-refinement", [/refinement-result\/v1/, 4_500]],
     ["corch-planner", [/implementation-plan\/v4/, 4_500]],
-    ["corch-worker", [/gate-selection\/v2/, 9_000]],
+    ["corch-worker", [/gate-selection\/v2/, 10_000]],
     ["corch-reviewer", [/review-result\/v2/, 4_500]],
     ["corch-tester", [/test-result\/v2/, 4_500]],
   ]);
@@ -3092,16 +3163,16 @@ test("authoritative v3 runtime policy has compact role-specific ownership", () =
   const worker = readRoleSkill("corch-worker");
   const tester = readRoleSkill("corch-tester");
   assert.match(coordinator, /explicit model\/thinking arguments/);
-  assert.match(worker, /Reviewer uses the Worker route/);
-  assert.match(tester, /gpt-6-luna\/xhigh/);
+  assert.match(worker, /gate\.mjs dispatch/);
+  assert.match(tester, /configured Tester runtime/);
 });
 
 test("authoritative v3 gate tasks share one serialized Worker checkout without orchestration", () => {
   const worker = readRoleSkill("corch-worker");
   const reviewer = readRoleSkill("corch-reviewer");
   const tester = readRoleSkill("corch-tester");
-  assert.match(worker, /Fork once into the same directory/);
-  assert.match(worker, /Acquire the\s+lease/);
+  assert.match(worker, /use `create_thread`/);
+  assert.match(worker, /first action is `claim-gate`/);
   assert.match(reviewer, /shared checkout/);
   assert.match(tester, /shared\s+checkout/);
   assert.match(reviewer, /Never .*orchestrate/is);
@@ -3114,7 +3185,7 @@ test("gate task prompts and explicit titles start with the internal task key", (
   const tester = readRoleSkill("corch-tester");
   assert.match(
     worker,
-    /exact title `\[TASK-N\] Reviewer` or `\[TASK-N\] Tester`/,
+    /helper's exact title/,
   );
   assert.match(worker, /\$corch-reviewer/);
   assert.match(worker, /\$corch-tester/);
@@ -3128,12 +3199,12 @@ test("gate tasks cannot recursively fork or start in parallel", () => {
   const tester = readRoleSkill("corch-tester");
 
   assert.match(worker, /finish Reviewer\s+before creating Tester/);
-  assert.match(worker, /Fork once[\s\S]*never in parallel/);
+  assert.match(worker, /before creating Tester; never in parallel/);
   assert.match(
     worker,
-    /Immediately set exact title[\s\S]*record\s+the returned ID/,
+    /Record the returned chat ID[\s\S]*event key/,
   );
-  assert.match(worker, /If ambiguous[\s\S]*never\s+refork/);
+  assert.match(worker, /After\s+ambiguous creation[\s\S]*never\s+create a duplicate/);
   assert.match(worker, /Use \$corch-reviewer for this gate/);
   assert.match(worker, /Use \$corch-tester for this gate/);
   for (const gate of [reviewer, tester]) {
@@ -3174,7 +3245,12 @@ test("authoritative workflow blocks hard dependencies before Worker creation", (
     coordinator,
     /Hard prerequisites require a verified directed dependency/,
   );
-  assert.match(coordinator, /run\s+`delivery-preflight\/v1`/);
+  assert.match(coordinator, /Only when selected work or that neighborhood contains hard or\s+coordination relationships, run `assess-delivery-preflight\.mjs`/);
+  assert.match(coordinator, /Dependency-free work skips both helper and packet, including unrelated Coordinator\s+items/);
+  assert.match(coordinator, /Check readiness, completion,\s+blockers, active families, ownership/);
+  assert.match(contracts, /block unmet merge\/Done milestones and enforce\s+declared concurrency boundaries/);
+  assert.match(contracts, /Direct delivery needs no task packets/);
+  assert.match(readRoleSkill("corch-worker"), /Final handoff requires `prepare-report\.mjs`; `gate\.mjs selection`\s+is optional early feedback/);
   assert.match(coordinator, /reserved `codex\/task-n-<slug>` branch/);
   assert.match(refinement, /directed dependency/);
   assert.match(refinement, /Coordination-only/);
@@ -3192,7 +3268,8 @@ test("static delivery-v3 boilerplate stays below token-regression ceilings", () 
   const roleCeilings = new Map([
     ["corch-refinement", 4_500],
     ["corch-planner", 4_500],
-    ["corch-worker", 9_000],
+    // Includes runtime escalation and fresh-chat dispatch/claim procedures.
+    ["corch-worker", 10_000],
     ["corch-reviewer", 4_500],
     ["corch-tester", 4_500],
   ]);
@@ -3213,13 +3290,93 @@ test("static delivery-v3 boilerplate stays below token-regression ceilings", () 
   }
 });
 
+test("gate CLI help, argument rejection, sanitized errors and imports share one surface", () => {
+  const script = path.join(SCRIPT_DIRECTORY, "gate.mjs");
+  const invoke = (args, input) => command(SCRIPT_DIRECTORY, process.execPath, [script, ...args], input);
+  assert.equal(invoke(["--help"]).status, 0);
+  for (const operation of ["selection", "assess", "compose", "dispatch"]) {
+    const help = invoke([operation, "--help"]);
+    assert.equal(help.status, 0, help.stderr);
+    assert.ok(help.stdout.includes(`gate.mjs ${operation}`));
+    const secret = "sk-" + "x".repeat(28);
+    const bad = invoke([operation, `--${secret}`]);
+    assert.equal(bad.status, 1);
+    assert.equal(bad.stdout, "");
+    assert.ok(!bad.stderr.includes(secret));
+  }
+  for (const args of [[], ["unknown"], ["constructor", "--help"], ["__proto__", "--help"], ["dispatch", "constructor", "value"],
+    ["--help", "extra"], ["assess", "--role", "review"],
+    ["compose", "--role", "reviewer"], ["assess", "--gate"], ["compose", "--base", "--amendment"],
+    ["selection", "--pr", "9", "--pr", "10"], ["dispatch", "--output", "unexpected.json"]]) {
+    const result = invoke(args);
+    assert.equal(result.status, 1, args.join(" "));
+    assert.equal(result.stdout, "");
+  }
+  for (const json of ["{", "[]", "null"]) {
+    const result = invoke(["dispatch"], { input: json });
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "");
+  }
+  const imported = command(SCRIPT_DIRECTORY, process.execPath, ["--input-type=module", "-e",
+    'import { assessGateDelta, buildGateDispatch } from "./gate.mjs"; if (typeof assessGateDelta !== "function" || typeof buildGateDispatch !== "function") process.exit(1);']);
+  assert.equal(imported.status, 0, imported.stderr);
+  assert.equal(imported.stdout, "");
+  assert.equal(imported.stderr, "");
+});
+
+test("workflow inventory is nine executables and nine acyclic internal owners", () => {
+  const executables = ["workflow-hook", "prepare-worker-worktree", "materialize-task-context", "task-state",
+    "run-bounded-check", "prepare-worker-bootstrap", "prepare-report", "gate", "assess-delivery-preflight"].map((name) => `${name}.mjs`).sort();
+  const modules = ["workflow-config", "runtime-policy", "task-source", "validation", "bootstrap", "delivery-state",
+    "task-context", "gate-contracts", "report"].map((name) => `${name}.mjs`).sort();
+  const lib = path.join(SCRIPT_DIRECTORY, "lib");
+  assert.deepEqual(readdirSync(SCRIPT_DIRECTORY).filter((name) => name.endsWith(".mjs")).sort(), executables);
+  assert.deepEqual(readdirSync(lib).sort(), modules);
+  assert.deepEqual(readdirSync(SCRIPT_DIRECTORY, { withFileTypes: true }).filter((item) => item.isDirectory()).map((item) => item.name), ["lib"]);
+  const edges = new Map();
+  for (const filename of [...executables, ...modules.map((name) => `lib/${name}`)]) {
+    const absolute = path.join(SCRIPT_DIRECTORY, filename);
+    const source = readFileSync(absolute, "utf8");
+    assert.equal(source.startsWith("#!/usr/bin/env node"), !filename.startsWith("lib/"), filename);
+    const imports = [...source.matchAll(/(?:\bfrom\s+|\bimport\s*\(\s*|\bimport\s*)["'](\.[^"']+\.mjs)["']/g)]
+      .map(([, reference]) => path.resolve(path.dirname(absolute), reference));
+    for (const dependency of imports) {
+      assert.ok(existsSync(dependency), `${filename}: ${dependency}`);
+      if (filename.startsWith("lib/")) assert.equal(path.dirname(dependency), lib, `${filename} imports an executable`);
+    }
+    if (filename.startsWith("lib/")) edges.set(absolute, imports);
+    assert.doesNotMatch(source, /workflow-lib\.mjs/);
+  }
+  const visited = new Set();
+  function visit(module, ancestors = new Set()) {
+    assert.ok(!ancestors.has(module), `cyclic dependency at ${module}`);
+    if (visited.has(module)) return;
+    for (const dependency of edges.get(module)) visit(dependency, new Set([...ancestors, module]));
+    visited.add(module);
+  }
+  for (const module of edges.keys()) visit(module);
+  assert.ok(!edges.get(path.join(lib, "gate-contracts.mjs")).includes(path.join(lib, "report.mjs")));
+});
+
 test("distributed role references and hook commands resolve inside this toolkit", () => {
   const repositoryRoot = path.resolve(SCRIPT_DIRECTORY, "..", "..", "..", "..");
+  const retiredHelpers = ["prepare-evidence.mjs", "prepare-pr-comment.mjs", "select-execution-route.mjs",
+    "validate-gate-selection.mjs", "assess-gate-delta.mjs", "compose-gate-result.mjs", "prepare-gate-dispatch.mjs", "workflow-lib.mjs"];
+  for (const filename of retiredHelpers) assert.equal(existsSync(path.join(SCRIPT_DIRECTORY, filename)), false);
+  const checkHelpers = (contents) => {
+    for (const filename of retiredHelpers) assert.equal(contents.includes(filename), false, filename);
+    for (const [filename] of contents.matchAll(/\b(?:lib\/)?[a-z][a-z-]+\.mjs\b/g)) {
+      assert.ok(existsSync(path.join(SCRIPT_DIRECTORY, filename)), filename);
+    }
+  };
+  checkHelpers(readFileSync(path.join(repositoryRoot, "README.md"), "utf8"));
+  checkHelpers(readFileSync(path.join(SCRIPT_DIRECTORY, "../references/contracts.md"), "utf8"));
   const skills = readdirSync(SKILLS_DIRECTORY, { withFileTypes: true }).filter(
     (entry) => entry.isDirectory(),
   );
   for (const skill of skills) {
     const contents = readRoleSkill(skill.name);
+    checkHelpers(contents);
     const frontmatter = contents.match(/^---\r?\n([\s\S]*?)\r?\n---/)[1];
     assert.equal(parseYaml(frontmatter).name, skill.name);
     for (const [reference] of contents.matchAll(/\$corch-[a-z-]+/g)) {
