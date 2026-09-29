@@ -1,146 +1,75 @@
 import assert from "node:assert/strict";
-import { cpSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
-import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
-import {
-  CONFIG,
-  validateConfig,
-} from "../.agents/skills/corch-development-workflow/scripts/lib/workflow-config.mjs";
+import { CONFIG, validateConfig } from "../.agents/skills/corch-development-workflow/scripts/lib/workflow-config.mjs";
+import { fixture, scripts, write, command, git } from "./helpers.mjs";
 
 test("configuration rejects ambiguous destinations and escaping setup paths", () => {
-  for (const change of [
-    { repository: "owner/repo/extra" },
-    { issuePrefix: "task/../" },
-    { baseBranch: "main..other" },
-    { baseBranch: "-main" },
-    { localCiCommand: "npm test\nother" },
-  ])
-    assert.throws(
-      () => validateConfig({ ...CONFIG, ...change }),
-      /Invalid Corch configuration/,
-    );
-  for (const entry of [
-    "../outside",
-    "/tmp/outside",
-    "C:/outside",
-    "node_modules/../../outside",
-  ]) {
-    assert.throws(
-      () =>
-        validateConfig({
-          ...CONFIG,
-          setup: {
-            steps: [
-              {
-                name: "install",
-                command: "npm",
-                args: ["ci"],
-                inputs: [entry],
-                outputs: [],
-              },
-            ],
-          },
-        }),
-      /repository-relative/,
-    );
+  for (const change of [{ repository: "owner/repo/extra" }, { issuePrefix: "task/../" }, { baseBranch: "main..other" }, { baseBranch: "-main" }, { localCiCommand: "npm test\nother" }]) {
+    assert.throws(() => validateConfig({ ...CONFIG, ...change }), /Invalid Corch configuration/);
+  }
+  for (const entry of ["../outside", "/tmp/outside", "C:/outside", "node_modules/../../outside"]) {
+    assert.throws(() => validateConfig({ ...CONFIG, setup: { steps: [{ name: "install", command: "node", args: [], inputs: [entry], outputs: [] }] } }), /repository-relative/);
   }
 });
 
-test("a different repository, base branch, project prefix and source reference work together", () => {
-  const root = mkdtempSync(path.join(tmpdir(), "corch-config-"));
-  try {
-    const configPath = path.join(root, "workflow.json");
-    writeFileSync(
-      configPath,
-      JSON.stringify({
-        ...CONFIG,
-        repository: "sample-org/toolkit",
-        issuePrefix: "OPS2",
-        baseBranch: "develop",
-        localCiCommand: "make check",
-      }),
-    );
-    const runtimeDirectory = new URL(
-      "../.agents/skills/corch-development-workflow/scripts/",
-      import.meta.url,
-    );
-    const moduleUrl = (name) => new URL(name, runtimeDirectory).href;
-    const script = `
-      import assert from "node:assert/strict";
-      import { createExecutionRoute, validateWorkerBootstrap, buildDeliveryTaskDispatch } from ${JSON.stringify(moduleUrl("./lib/bootstrap.mjs"))};
-      import { redactText } from ${JSON.stringify(moduleUrl("./lib/validation.mjs"))};
-      import { plannerLaunchFromPrompt } from ${JSON.stringify(moduleUrl("./prepare-worker-worktree.mjs"))};
-      import { ISSUE_PATTERN, BRANCH_PATTERN, LOCAL_CI_COMMAND, CI_RUN_PATTERN } from ${JSON.stringify(moduleUrl("./lib/workflow-config.mjs"))};
-      const issueKey = "OPS2-7";
-      const branch = "codex/ops2-7-example";
-      const sourceRef = "https://issues.example.test/browse/OPS2-7";
-      const input = {
-        schemaVersion: "worker-bootstrap/v2",
-        issue: { key: issueKey, summary: "Example change", sourceRef },
-        reservedBranch: branch, taskContextPath: ".agents/task-context/OPS2-7.md",
-        executionRoute: createExecutionRoute({ issueKey, classification: "bounded", riskSignals: [], rationale: "A small local change." }),
-        deliveryTarget: { repository: "sample-org/toolkit", remoteUrl: "https://github.com/sample-org/toolkit.git",
-          baseBranch: "develop", headBranch: branch, push: true, draftPullRequest: true,
-          readyForHumanReview: true, sourceRef: sourceRef },
-      };
-      validateWorkerBootstrap(input);
-      const dispatch = buildDeliveryTaskDispatch(input, { coordinator: "fixture" });
-      assert.deepEqual(plannerLaunchFromPrompt(dispatch.prompt), { issueKey, branch });
-      assert.equal(LOCAL_CI_COMMAND, "make check");
-      assert.equal(ISSUE_PATTERN.test("TASK-7"), false);
-      assert.equal(BRANCH_PATTERN.test("codex/task-7-example"), false);
-      assert.throws(() => validateWorkerBootstrap({ ...input, deliveryTarget: { ...input.deliveryTarget, baseBranch: "main" } }));
-      const runUrl = "https://github.com/sample-org/toolkit/actions/runs/12345678901";
-      assert.equal(CI_RUN_PATTERN.test(runUrl), true);
-      assert.equal(CI_RUN_PATTERN.test(runUrl.replace("toolkit/", "other/")), false);
-      assert.equal(redactText(runUrl), runUrl);
-    `;
-    const result = spawnSync(
-      process.execPath,
-      ["--input-type=module", "-e", script],
-      {
-        encoding: "utf8",
-        env: { ...process.env, CORCH_CONFIG: configPath },
-        windowsHide: true,
-        timeout: 20_000,
-      },
-    );
-    assert.equal(result.status, 0, result.stderr);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+test("scrum configuration preserves provider selection, accepts unresolved legacy settings and rejects unsafe destinations", () => {
+  const { scrum: ignored, ...legacy } = CONFIG;
+  assert.equal(validateConfig(legacy).scrum, undefined);
+  for (const scrum of [
+    { provider: null, projectUrl: null },
+    { provider: "jira", projectUrl: "https://tracker.example.test/projects/PROJ" },
+    { provider: "linear", projectUrl: "https://linear.app/example/team/ENG" },
+    { provider: "custom-provider", projectUrl: null },
+  ]) assert.deepEqual(validateConfig({ ...CONFIG, scrum }).scrum, scrum);
+  for (const scrum of [null, [], "jira", { provider: "bad provider" }, { provider: 42 },
+    { provider: "jira", token: "not-a-config-field" },
+    ...["http://tracker.example.test", "https://user:pass@tracker.example.test", "https://tracker.example.test/\nother", "file:///tmp/project", {}]
+      .map((projectUrl) => ({ provider: "jira", projectUrl })),
+  ]) assert.throws(() => validateConfig({ ...CONFIG, scrum }), /Invalid Corch configuration/);
 });
 
-test("copied script trees discover adjacent configuration independently of cwd and honor CORCH_CONFIG", () => {
-  const root = mkdtempSync(path.join(tmpdir(), "corch-installed-config-"));
-  try {
-    const scripts = path.join(root, "installed", ".agents", "skills", "corch-development-workflow", "scripts");
-    cpSync(fileURLToPath(new URL("../.agents/skills/corch-development-workflow/scripts", import.meta.url)), scripts, { recursive: true });
-    const localConfig = { ...CONFIG, repository: "installed/toolkit", issuePrefix: "INST", baseBranch: "develop" };
-    writeFileSync(path.join(root, "installed", ".agents", "workflow.json"), JSON.stringify(localConfig));
-    const override = path.join(root, "override.json");
-    writeFileSync(override, JSON.stringify({ ...localConfig, repository: "overridden/toolkit" }));
-    const cwd = path.join(root, "unrelated");
-    mkdirSync(cwd);
-    writeFileSync(path.join(cwd, "workflow.json"), "malformed config in cwd must not be loaded");
-    for (const configured of [false, true]) {
-      const env = { ...process.env };
-      delete env.CORCH_CONFIG;
-      if (configured) env.CORCH_CONFIG = override;
-      const code = `import { CONFIG } from ${JSON.stringify(pathToFileURL(path.join(scripts, "lib", "workflow-config.mjs")).href)}; process.stdout.write(JSON.stringify(CONFIG));`;
-      const result = spawnSync(process.execPath, ["--input-type=module", "-e", code], { cwd, env, encoding: "utf8", windowsHide: true, timeout: 10_000 });
-      assert.equal(result.status, 0, result.stderr);
-      const config = JSON.parse(result.stdout);
-      assert.equal(config.repository, configured ? "overridden/toolkit" : "installed/toolkit");
-      assert.equal(config.issuePrefix, "INST");
-      const help = spawnSync(process.execPath, [path.join(scripts, "gate.mjs"), "--help"], { cwd, env, encoding: "utf8", windowsHide: true, timeout: 10_000 });
-      assert.equal(help.status, 0, help.stderr);
-      assert.match(help.stdout, /selection\|assess\|compose\|dispatch/);
+test("copied helpers run without toolkit packages using adjacent config or CORCH_CONFIG", () => fixture(({ root }) => {
+  const installed = path.join(root, "installed");
+  const copied = path.join(installed, ".agents/skills/corch-development-workflow/scripts");
+  cpSync(scripts, copied, { recursive: true });
+  const custom = { ...CONFIG, repository: "sample/toolkit", issuePrefix: "OPS2", baseBranch: "develop", localCiCommand: "make check",
+    scrum: { provider: "jira", projectUrl: "https://tracker.example.test/projects/PROJ" } };
+  const adjacent = path.join(installed, ".agents/workflow.json");
+  write(adjacent, custom);
+  const override = path.join(root, "override.json");
+  write(override, { ...custom, repository: "overridden/toolkit" });
+  assert.equal(existsSync(path.join(installed, "node_modules")), false);
+  for (const configured of [false, true]) {
+    const env = { ...process.env }; delete env.CORCH_CONFIG;
+    if (configured) env.CORCH_CONFIG = override;
+    const call = (name, args, input) => command(root, process.execPath, [path.join(copied, name), ...args], {
+      env, input: input === undefined ? undefined : JSON.stringify(input),
+    });
+    for (const name of readdirSync(copied).filter((file) => file.endsWith(".mjs"))) {
+      const help = call(name, ["--help"]); assert.equal(help.status, 0, help.stderr); assert.match(help.stdout, /Usage/);
     }
-  } finally {
-    rmSync(root, { recursive: true, force: true });
+    const key = configured ? "OPS2-8" : "OPS2-7";
+    const repository = configured ? "overridden/toolkit" : "sample/toolkit";
+    const result = call("task-state.mjs", ["record-delivery", "--issue", key, "--expected-revision", "0"], {
+      repository, remoteUrl: `https://github.com/${repository}.git`, baseBranch: "develop",
+      headBranch: `corch/${key.toLowerCase()}-fixture`, allowedOperations: [],
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(call("task-state.mjs", ["show", "--issue", "TASK-7"]).status, 1);
+    const record = JSON.parse(call("task-state.mjs", ["show", "--issue", key]).stdout);
+    assert.equal(record.delivery.repository, repository);
+    const checked = call("run-bounded-check.mjs", ["--issue", key, "--name", "copied", "--", process.execPath, "--version"]);
+    assert.equal(checked.status, 0, checked.stderr);
+    assert.equal(JSON.parse(checked.stdout).status, "PASS");
   }
-});
+  // The environment helper resolves dependency steps from its target checkout.
+  const target = path.join(root, "linked");
+  git(root, "worktree", "add", "--quiet", "--detach", target);
+  write(path.join(target, ".agents/workflow.json"), { ...CONFIG, setup: { steps: [{ name: "create", command: process.execPath,
+    args: ["-e", "require('node:fs').writeFileSync('prepared.txt','ready')"], inputs: [], outputs: ["prepared.txt"] }] } });
+  const setup = command(target, process.execPath, [path.join(copied, "prepare-worker-worktree.mjs")], { env: { ...process.env, CORCH_CONFIG: adjacent } });
+  assert.equal(setup.status, 0, setup.stderr);
+  assert.equal(readFileSync(path.join(target, "prepared.txt"), "utf8"), "ready");
+}));

@@ -7,7 +7,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { createExecutionRoute } from "../.agents/skills/corch-development-workflow/scripts/lib/bootstrap.mjs";
+import { createExecutionRoute } from "../.agents/skills/corch-development-workflow/scripts/lib/runtime-policy.mjs";
+import { workItem } from "./helpers.mjs";
 
 const script = fileURLToPath(new URL(
   "../.agents/skills/corch-development-workflow/scripts/task-state.mjs", import.meta.url,
@@ -85,14 +86,14 @@ async function fixture(action) {
     writeFileSync(statePath, JSON.stringify({
       schemaVersion: "task-state/v2", workflowProtocol: "delivery-v3", issueKey: issue,
       tasks: Object.fromEntries(["worker", "reviewer", "tester"].map((role) => [
-        role, { threadId: role, worktree: root, retired: false },
+        role, { threadId: role, worktree: root, branch: "main", retired: false },
       ])),
       gates: {}, deliveredEvents: {},
     }));
     const preload = path.join(path.dirname(statePath), "barrier.cjs");
     writeFileSync(preload, preloadSource);
     const invoke = (args, cwd = root) => command(cwd, process.execPath, [script, ...args]);
-    const start = (args, { cwd = root, readPath = statePath, release, failWrite, replaceOwner } = {}) => {
+    const start = (args, { cwd = root, readPath = statePath, release, failWrite, replaceOwner, input } = {}) => {
       const child = fork(script, args, {
         cwd, silent: true, windowsHide: true, execArgv: ["--require", preload],
         env: {
@@ -103,6 +104,7 @@ async function fixture(action) {
         },
       });
       const messages = [];
+      if (input !== undefined) child.stdin.end(JSON.stringify(input));
       let stdout = "", stderr = "";
       child.stdout.on("data", (chunk) => { stdout += chunk; });
       child.stderr.on("data", (chunk) => { stderr += chunk; });
@@ -141,9 +143,9 @@ async function fixture(action) {
     };
     const compete = async (firstArgs, secondArgs, options = {}) => {
       const release = path.join(root, "release");
-      const first = start(firstArgs, { ...options, release });
+      const first = start(firstArgs, { ...options, release, input: options.firstInput });
       await first.waitFor("read");
-      const second = start(secondArgs, options);
+      const second = start(secondArgs, { ...options, input: options.secondInput });
       const reached = await second.waitFor("waiting", "read");
       // If serialization regresses, let the competing stale write finish first.
       if (reached === "read") await second.finished;
@@ -164,9 +166,19 @@ const event = (name, target = "worker") => [
   "record-event", "--issue", issue, "--event", `task-42:${name}`, "--target", target,
 ];
 
-test("concurrent checkout gate acquisitions have exactly one winner", () => fixture(async ({ root, statePath, lockPath, compete }) => {
+test("concurrent context revisions preserve the winning user decision and reject stale overwrite", () => fixture(async ({ statePath, compete }) => {
+  const args = ["record-context", "--issue", issue, "--expected-revision", "0"];
+  const firstInput = workItem({ userDecisions: ["First explicit decision"] });
+  const secondInput = workItem({ userDecisions: ["Conflicting stale decision"] });
+  const results = await compete(args, args, { firstInput, secondInput });
+  assert.deepEqual(results.map((result) => result.code), [0, 1]);
+  assert.match(results[1].stderr, /stale workItem revision/);
+  assert.deepEqual(JSON.parse(readFileSync(statePath)).workItem, { revision: 1, ...firstInput });
+}));
+
+test("concurrent checkout gate acquisitions have exactly one winner", () => fixture(async ({ root, statePath, lockPath, compete, git }) => {
   const gate = (name, role) => ["begin-gate", "--issue", issue, "--gate", name,
-    "--thread", role, "--worktree", root, "--sha", sha];
+    "--thread", role, "--worktree", root, "--sha", git("rev-parse", "HEAD")];
   const results = await compete(gate("review", "reviewer"), gate("test", "tester"));
   assert.deepEqual(results.map((result) => result.code), [0, 1]);
   assert.match(results[1].stderr, /another checkout gate is already active/);
@@ -238,7 +250,7 @@ test("concurrent conflicting registrations cannot replace the winner", () => fix
 
 test("first concurrent linked-worktree mutations reread the newly local state", () => fixture(async ({ root, statePath, git, compete }) => {
   const checkout = path.join(root, "linked");
-  git("worktree", "add", "--quiet", "-b", "codex/task-42-lock", checkout);
+  git("worktree", "add", "--quiet", "-b", "corch/task-42-lock", checkout);
   const results = await compete(event("first"), event("second"), { cwd: checkout });
   assert.deepEqual(results.map((result) => result.code), [0, 0]);
   assert.deepEqual(JSON.parse(readFileSync(path.join(checkout, stateRelative))).deliveredEvents, {

@@ -1,53 +1,75 @@
 ---
 name: corch-development-workflow
-description: Deliver bounded Corch changes in the current task or route work needing tracked ownership, coordination, or material risk handling to its delivery role. Use only before a task role is assigned.
+description: Deliver eligible bounded Corch changes directly or route coordinated work through its delivery roles, preserving explicit user decisions and active families.
 ---
 
 # Corch Delivery Router
 
-Identify the task role and load exactly one destination:
+Use the already assigned role's skill. An approved plan or existing family
+continues at its current role; do not restart intake or repeat approval.
+For new implementation requests, use direct delivery when the conditions below
+hold; otherwise route to `$corch-refinement`. Explicit user instructions about
+direct work, required roles or waived checks remain controlling.
 
-- coordinator: `$corch-delivery-coordinator`;
-- Refinement: `$corch-refinement`;
-- planner: `$corch-planner`;
-- Worker: `$corch-worker`;
-- Reviewer: `$corch-reviewer`;
-- Tester: `$corch-tester`.
-
-Once a role is known, do not load another current role skill. Keep deterministic
-scripts and packet contracts in this skill's shared `scripts/` and `references/`
-directories; role skills use them without copying their logic.
+Role skills are `$corch-delivery-coordinator`, `$corch-refinement`,
+`$corch-planner`, `$corch-worker`, `$corch-reviewer`, and `$corch-tester`.
+Load exactly the applicable role. Keep mechanical helpers and shared data
+conventions in this skill's `scripts/` and `references/contracts.md`.
 
 ## Direct delivery
 
-Use direct delivery for localized fixes and routine bounded changes when every condition holds:
+Use this route automatically when every condition holds:
 
-- the user explicitly delegated implementation in this task;
-- the outcome is concrete, localized, and verifiable with established patterns;
-- it has small blast radius, no cross-task coordination, tracked ownership, or
-  active delivery family; and
-- it does not materially affect production/customer data, security, privacy,
+- The user has delegated implementation in the current chat.
+- The outcome is concrete, localized and verifiable with established patterns.
+- The change has small blast radius, no cross-task coordination or tracked
+  ownership requirement, and no active delivery family.
+- It does not materially affect production/customer data, security, privacy,
   auth, billing, metering, database schema, public/cross-package contracts,
-  infrastructure, deployment, or dependencies.
+  infrastructure, deployment or dependencies.
 
-Otherwise route the request to `$corch-refinement`.
+Keep the work in the current chat and checkout, preserving unrelated edits.
+No external backlog item, task record, separate role chat, plan approval or new
+worktree is required. Make the smallest complete change and run focused checks;
+follow any additional project/user validation requirements. Report the actual
+checks, evidence and confidence gaps in the final response. If investigation
+reveals coordination needs or material risk, preserve work and authorization
+while routing the expanded scope to Refinement.
 
-Remain in this task and checkout; no external ticket, separate task, worktree,
-Planner, Reviewer, Tester, task packet or dependency preflight is required. Preserve unrelated work, make the
-smallest complete change with existing patterns, and run focused checks. Use
-independent checks only when the risk warrants them and delegation is authorized.
+Reuse established authority for commits, pushes and PRs. An implementation
+request authorizes local edits and validation, not external publication. Finish
+the reviewable patch before seeking missing external authority. For authorized
+PR delivery, use an appropriate `corch/` branch without publishing unrelated
+changes, and follow the shared PR timing/readiness contract. Do not create a
+delivery family solely to record a direct change or its PR.
 
-Use existing destination-specific authorization for commits, pushes, and PR
-creation/update. An implementation request alone authorizes local edits and
-validation; when publication is not yet authorized, finish the reviewable patch
-before requesting the specific external action. Never repeat an authorization
-already supplied. Use a codex/ branch for authorized PR delivery; do not repurpose
-another issue's branch or publish unrelated changes. Inspect current-head remote
-CI before PR handoff unless explicitly waived; a full local verify:ci run is not
-mandatory for this route. Report actual validation, explicit check waivers, and
-confidence gaps without claiming skipped checks passed.
+## Coordinated delivery
 
-Preserve assigned delivery families. Scope requiring coordination or
-material risk handling follows the named role; synchronize already-authorized
-user decisions without blocking their implementation on source administration.
-For an on-demand workflow retrospective, use references/contracts.md.
+Refinement establishes the outcome in the external scrum provider's backlog;
+the Coordinator prepares the family; the Planner resolves implementation with
+the user. The Worker owns implementation, proportional initial independent
+checks, corrections and delivery. Its role skill defines when Reviewer, Tester,
+both or neither are needed, including repeat passes.
+
+Preserve current edits, registered identities, plan approval, runtime snapshots,
+and active checkout leases. Local implementation does not itself grant external
+publication authority. Reuse existing destination-specific authorization;
+complete a reviewable patch before asking for any missing external action.
+Resolve the scrum provider from `.agents/workflow.json.scrum` or the selected
+project/item. Normal Refinement must maintain a real provider item. Missing
+provider access leaves refinement pending; do not silently replace it with local
+state. Continue already-authorized implementation during a provider outage and
+disclose pending synchronization. Provider unavailability does not make an
+ineligible change eligible for direct delivery.
+
+The provider owns backlog and lifecycle; the local record owns execution state
+and the agreed context snapshot. The shared contract defines their relationship
+and each role's provider operations. Use connected provider tools or an applicable
+adapter such as `$corch-jira-api`; adapters supplement the assigned role.
+
+Scripts prepare workspaces, maintain atomic state and execute bounded commands.
+Follow the shared contract's portable command execution guidance when adding
+helpers, configuring setup or issuing commands on the current host.
+Roles decide scope, dependency readiness, initial/repeat passes, evidence
+sufficiency and readiness for human review. Do not replace the removed workflow policy
+engine with another mandatory packet, wrapper or prompt generator.

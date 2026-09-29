@@ -1,13 +1,6 @@
+import { existsSync, realpathSync } from "node:fs";
+import path from "node:path";
 import { REPOSITORY, escapeRegExp } from "./workflow-config.mjs";
-
-export const EVIDENCE_PROFILES = new Set([
-  "frontend",
-  "backend",
-  "mixed",
-  "general",
-]);
-
-export const SHA_PATTERN = /^[0-9a-f]{40}$/;
 
 const SECRET_PATTERNS = [
   { label: "OpenAI key", pattern: /\bsk-[A-Za-z0-9_-]{20,}\b/g },
@@ -87,34 +80,6 @@ export function nonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-export function assertExactKeys(value, allowed, label, errors) {
-  if (!plainObject(value)) {
-    errors.push(`${label} must be an object`);
-    return;
-  }
-  for (const key of Object.keys(value)) {
-    if (!allowed.includes(key)) {
-      errors.push(`${label}.${key} is not supported`);
-    }
-  }
-}
-
-export function requireString(value, label, errors) {
-  if (!nonEmptyString(value)) {
-    errors.push(`${label} must be a non-empty string`);
-  }
-}
-
-export function requireStringArray(value, label, errors, { allowEmpty = false } = {}) {
-  if (!Array.isArray(value) || (!allowEmpty && value.length === 0)) {
-    errors.push(`${label} must be ${allowEmpty ? "an" : "a non-empty"} array`);
-    return;
-  }
-  value.forEach((item, index) =>
-    requireString(item, `${label}[${index}]`, errors),
-  );
-}
-
 export function detectUnsafeText(text) {
   const findings = [];
   const protectedInput = protectSafeMachineIdentifiers(text).text;
@@ -124,17 +89,6 @@ export function detectUnsafeText(text) {
   ]) {
     pattern.lastIndex = 0;
     if (pattern.test(protectedInput)) {
-      findings.push(label);
-    }
-  }
-  return [...new Set(findings)];
-}
-
-export function detectSecretText(text) {
-  const findings = [];
-  for (const { label, pattern } of SECRET_PATTERNS) {
-    pattern.lastIndex = 0;
-    if (pattern.test(text)) {
       findings.push(label);
     }
   }
@@ -163,4 +117,52 @@ export function parseJsonDocument(text) {
       `invalid JSON document: ${error.message}`,
     ]);
   }
+}
+
+// A work item can originate in a tracker, a document, or the current conversation.
+// These helpers validate references; they never fetch a source or authorize a write.
+export function isHttpsUrl(value) {
+  if (
+    typeof value !== "string" ||
+    !value.startsWith("https://") ||
+    /[\s<>()[\]\\]/u.test(value)
+  )
+    return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
+export function isSourceRef(value) {
+  if (value === null || value === undefined) return true;
+  if (typeof value !== "string" || !value || /[\r\n\0<>]/u.test(value))
+    return false;
+  if (isHttpsUrl(value)) return true;
+  if (/^codex:\/\/threads\/[a-zA-Z0-9_-]+$/u.test(value)) return true;
+  // Local documents use portable repository-relative paths; no traversal or drives.
+  if (/[\\:]/u.test(value) || value.startsWith("/") || value.trim() !== value)
+    return false;
+  const documentPath = value.split("#", 1)[0];
+  return (
+    (documentPath.includes("/") ||
+      /^[^.].*\.[a-zA-Z0-9]+$/u.test(documentPath)) &&
+    documentPath
+      .split("/")
+      .every((part) => part && part !== "." && part !== "..")
+  );
+}
+
+
+export function containedPath(root, relative) {
+  if (typeof relative !== "string" || !relative || /[\\:\0]/.test(relative) || path.isAbsolute(relative) ||
+      relative.split("/").some((part) => !part || part === "." || part === "..")) throw new Error("invalid checkout-relative path");
+  const candidate = path.resolve(root, relative);
+  let ancestor = candidate;
+  while (!existsSync(ancestor)) ancestor = path.dirname(ancestor);
+  const difference = path.relative(realpathSync(root), realpathSync(ancestor));
+  if (difference === ".." || difference.startsWith(".." + path.sep) || path.isAbsolute(difference)) throw new Error("path escapes the checkout");
+  return candidate;
 }

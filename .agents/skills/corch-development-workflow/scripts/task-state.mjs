@@ -1,5 +1,12 @@
 #!/usr/bin/env node
-import { ISSUE_PATTERN } from "./lib/workflow-config.mjs";
+import {
+  CONFIG,
+  ISSUE_PATTERN,
+  REPOSITORY,
+  REMOTE_URL,
+  BASE_BRANCH,
+  issueFromBranch,
+} from "./lib/workflow-config.mjs";
 
 import {
   closeSync,
@@ -8,19 +15,89 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { isDeepStrictEqual } from "node:util";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
-import { ROUTE_LEVELS } from "./lib/runtime-policy.mjs";
-import { validateRouteState, verifyWorkerCheckout, sameCheckout, TASK_STATE_SCHEMA, WORKFLOW_PROTOCOL } from "./lib/delivery-state.mjs";
+import {
+  ROUTE_LEVELS,
+  validateRouteState,
+  createExecutionRoute,
+  resolveRuntime,
+  runtimeArguments,
+} from "./lib/runtime-policy.mjs";
 
-import { WorkflowValidationError, parseJsonDocument, redactText } from "./lib/validation.mjs";
-import { createExecutionRoute, validatePlanReference, MARKDOWN_PLAN_SCHEMA } from "./lib/bootstrap.mjs";
+import {
+  WorkflowValidationError,
+  parseJsonDocument,
+  redactText,
+  plainObject,
+  nonEmptyString,
+  isSourceRef,
+  isHttpsUrl,
+  detectUnsafeText,
+  containedPath,
+} from "./lib/validation.mjs";
+const TASK_STATE_SCHEMA = "task-state/v2";
+const WORKFLOW_PROTOCOL = "delivery-v3";
+const MARKDOWN_PLAN_SCHEMA = "implementation-plan/v4";
+
+function gitValue(cwd, args) {
+  const result = spawnSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    windowsHide: true,
+    shell: false,
+    timeout: 15_000,
+  });
+  if (result.status !== 0)
+    throw new Error(result.stderr?.trim() || `git ${args[0]} failed`);
+  return result.stdout.trim();
+}
+
+function sameCheckout(left, right) {
+  return (
+    typeof left === "string" &&
+    typeof right === "string" &&
+    path.isAbsolute(left) &&
+    path.isAbsolute(right) &&
+    realpathSync(left) === realpathSync(right)
+  );
+}
+
+function verifyWorkerCheckout(state, worktree, sha) {
+  const worker = state.tasks?.worker;
+  if (
+    !worker?.threadId ||
+    worker.retired ||
+    !sameCheckout(worker.worktree, worktree)
+  ) {
+    throw new Error(
+      "an active Worker with the matching registered checkout is required",
+    );
+  }
+  if (
+    !sameCheckout(
+      gitValue(worktree, ["rev-parse", "--show-toplevel"]),
+      worktree,
+    ) ||
+    !worker.branch ||
+    worker.branch !== gitValue(worktree, ["branch", "--show-current"])
+  ) {
+    throw new Error(
+      "Worker checkout root or branch does not match registration",
+    );
+  }
+  if (sha && gitValue(worktree, ["rev-parse", "HEAD"]) !== sha)
+    throw new Error("Worker checkout commit does not match requested commit");
+  return worker;
+}
 
 const ROLE_PATTERN = /^(worker|planner|reviewer|tester)$/;
 const SHA_PATTERN = /^[0-9a-f]{40}$/;
@@ -33,27 +110,24 @@ function usage() {
 
 Usage:
   node task-state.mjs show --issue TASK-N
-  node task-state.mjs register-task --issue TASK-N --role worker|planner|reviewer|tester \\
-    --thread <id> [--host <id>] [--worktree <absolute-path>] [--branch <name>] [--pr N]
-  node task-state.mjs record-route --issue TASK-N \\
-    --classification bounded|routine|standard|complex|high-risk|exceptional \\
-    --rationale <text> [--signal <name>]...
-  node task-state.mjs record-context --issue TASK-N --revision N \\
-    --path .agents/task-context/TASK-N.md
-  node task-state.mjs escalate-route --issue TASK-N --expected-revision N \\
-    --classification standard|complex|high-risk|exceptional --signal <name> --rationale <evidence>
-  node task-state.mjs record-plan --issue TASK-N \\
-    --revision 1 --path .agents/task-state/TASK-N-plan.md
+  node task-state.mjs register-task --issue TASK-N --role worker|planner|reviewer|tester --thread <id> [--host <id>] [--worktree <absolute-path>] [--branch <name>] [--pr N]
+  node task-state.mjs record-route --issue TASK-N --classification bounded|routine|standard|complex|high-risk|exceptional --rationale <text> [--signal <name>]...
+  node task-state.mjs record-context --issue TASK-N --expected-revision N
+  node task-state.mjs record-delivery --issue TASK-N --expected-revision N
+  node task-state.mjs runtime --issue TASK-N --role planner|worker|reviewer|tester
+  node task-state.mjs escalate-route --issue TASK-N --expected-revision N --classification standard|complex|high-risk|exceptional --signal <name> --rationale <evidence>
+  node task-state.mjs record-plan --issue TASK-N --revision 1 --path .agents/task-state/TASK-N-plan.md
   node task-state.mjs record-event --issue TASK-N --event <stable-key> --target <thread-id>
   node task-state.mjs record-gate --issue TASK-N --gate review|test --sha <40-hex> --result <path>
-  node task-state.mjs begin-gate --issue TASK-N --gate review|test --thread <id> \
-    --worktree <absolute-path> --sha <40-hex>
+  node task-state.mjs begin-gate --issue TASK-N --gate review|test --thread <id> --worktree <absolute-path> --sha <40-hex>
   node task-state.mjs end-gate --issue TASK-N --gate review|test --thread <id>
-  node task-state.mjs claim-gate --issue TASK-N --gate review|test --thread <session-id> \\
-    --worktree <absolute-worker-checkout> --sha <40-hex>
+  node task-state.mjs claim-gate --issue TASK-N --gate review|test --thread <thread-id> --worktree <absolute-worker-checkout> --sha <40-hex>
   node task-state.mjs retire-task --issue TASK-N --role worker|planner|reviewer|tester --thread <id>
 
 Planner registration requires --kind task and identifies a visible Codex task.
+record-context and record-delivery read one JSON object from standard input.
+Use the host shell's stdin syntax or a subprocess input API to supply it.
+Replace placeholders and choose one value from each pipe-separated option.
 
 register-task and record-event return already-recorded for identical entries and
 fail on conflicting identity. Before retrying an ambiguous app operation, the
@@ -122,6 +196,8 @@ function parseArguments(argv) {
   if (
     !new Set([
       "show",
+      "runtime",
+      "record-delivery",
       "register-task",
       "record-route",
       "escalate-route",
@@ -159,19 +235,26 @@ function parseArguments(argv) {
       `${args.command} requires --classification and --rationale`,
     ]);
   }
-  if (args.command === "escalate-route" &&
-      (!Number.isSafeInteger(args.expectedRevision) || args.expectedRevision < 1 || args.riskSignals.length === 0)) {
-    throw new WorkflowValidationError(["escalate-route requires a positive --expected-revision and concrete --signal evidence with --rationale"]);
-  }
   if (
-    args.command === "record-context" &&
-    (!Number.isInteger(args.contextRevision) ||
-      args.contextRevision < 1 ||
-      args.contextPath !== `.agents/task-context/${args.issueKey}.md`)
+    args.command === "escalate-route" &&
+    (!Number.isSafeInteger(args.expectedRevision) ||
+      args.expectedRevision < 1 ||
+      args.riskSignals.length === 0)
   ) {
     throw new WorkflowValidationError([
-      "record-context requires a positive --revision and the issue task-context --path",
+      "escalate-route requires a positive --expected-revision and concrete --signal evidence with --rationale",
     ]);
+  }
+  if (
+    ["record-context", "record-delivery"].includes(args.command) &&
+    (!Number.isSafeInteger(args.expectedRevision) || args.expectedRevision < 0)
+  ) {
+    throw new WorkflowValidationError([
+      "record-context/record-delivery require a nonnegative --expected-revision",
+    ]);
+  }
+  if (args.command === "runtime" && !ROLE_PATTERN.test(args.role ?? "")) {
+    throw new WorkflowValidationError(["runtime requires a role"]);
   }
   if (
     args.kind !== undefined &&
@@ -227,8 +310,13 @@ function parseArguments(argv) {
       "checkout gate operations require --gate and --thread",
     ]);
   }
-  if (args.command === "claim-gate" && !/^[a-zA-Z0-9_-]{1,128}$/.test(args.threadId ?? "")) {
-    throw new WorkflowValidationError(["claim-gate requires a validated SessionStart --thread ID"]);
+  if (
+    args.command === "claim-gate" &&
+    !/^[a-zA-Z0-9_-]{1,128}$/.test(args.threadId ?? "")
+  ) {
+    throw new WorkflowValidationError([
+      "claim-gate requires a valid --thread ID",
+    ]);
   }
   if (
     ["claim-gate", "begin-gate"].includes(args.command) &&
@@ -334,16 +422,30 @@ function validateState(value, issueKey) {
       "task-state schema or issue identity is invalid",
     ]);
   }
-  if (!value.tasks || !value.gates || !value.deliveredEvents) {
+  if (![value.tasks, value.gates, value.deliveredEvents].every(plainObject)) {
     throw new WorkflowValidationError(["task-state is incomplete"]);
   }
   if (value.executionRoute !== undefined) {
     validateRouteState(value);
-  } else if (value.executionRouteRevision !== undefined || value.executionRouteHistory !== undefined) {
-    throw new WorkflowValidationError(["route metadata requires an execution route"]);
+  } else if (
+    value.executionRouteRevision !== undefined ||
+    value.executionRouteHistory !== undefined
+  ) {
+    throw new WorkflowValidationError([
+      "route metadata requires an execution route",
+    ]);
   }
   if (value.implementationPlan !== undefined) {
     validatePlanReference(value.implementationPlan, issueKey);
+  }
+  for (const field of ["workItem", "delivery"]) {
+    if (value[field] !== undefined) {
+      const { revision, ...record } = value[field];
+      if (!Number.isSafeInteger(revision) || revision < 1)
+        throw new Error("invalid " + field + " revision");
+      if (field === "workItem") validateWorkItem(record);
+      else validateDelivery(record, issueKey);
+    }
   }
   if (value.tasks.planner && value.tasks.planner.kind !== "task") {
     throw new WorkflowValidationError([
@@ -361,8 +463,10 @@ function validateState(value, issueKey) {
 function stateLocation(root, issueKey) {
   const directory = path.join(root, ".agents", "task-state");
   if (!existsSync(directory)) {
+    containedPath(root, ".agents/task-state");
     mkdirSync(directory, { recursive: true });
   }
+  containedPath(root, ".agents/task-state");
   const stat = lstatSync(directory);
   if (!stat.isDirectory() || stat.isSymbolicLink()) {
     throw new WorkflowValidationError([
@@ -424,9 +528,8 @@ async function withStateLock(targetPath, action) {
   const lockPath = `${targetPath}.lock`;
   const owner = { pid: process.pid, token: randomUUID() };
   const recovery = `Verify that no task-state writer is running before removing ${path.basename(lockPath)}; then retry. Do not clear the checkout gate lease.`;
-  const fail = (reason) => new WorkflowValidationError([
-    `Task-state lock ${reason}. ${recovery}`,
-  ]);
+  const fail = (reason) =>
+    new WorkflowValidationError([`Task-state lock ${reason}. ${recovery}`]);
   const deadline = Date.now() + STATE_LOCK_TIMEOUT_MS;
   let descriptor;
   while (true) {
@@ -446,9 +549,14 @@ async function withStateLock(targetPath, action) {
           // The owner may have released its lock and exited since our read.
           try {
             const current = readLockOwner(lockPath);
-            if (current.pid !== existing.pid || current.token !== existing.token) continue;
+            if (
+              current.pid !== existing.pid ||
+              current.token !== existing.token
+            )
+              continue;
           } catch (refresh) {
-            if (refresh.code === "ENOENT" || refresh instanceof SyntaxError) continue;
+            if (refresh.code === "ENOENT" || refresh instanceof SyntaxError)
+              continue;
             throw fail("ownership cannot be verified");
           }
           throw fail("has a stale owner");
@@ -460,9 +568,11 @@ async function withStateLock(targetPath, action) {
         incompleteOwner = true;
       }
       if (Date.now() >= deadline) {
-        throw fail(incompleteOwner
-          ? "ownership cannot be verified after 5 seconds"
-          : "timed out after 5 seconds");
+        throw fail(
+          incompleteOwner
+            ? "ownership cannot be verified after 5 seconds"
+            : "timed out after 5 seconds",
+        );
       }
       await delay(STATE_LOCK_RETRY_MS);
     }
@@ -495,9 +605,22 @@ async function main() {
     process.stdout.write(`${usage()}\n`);
     return;
   }
-  const checkoutRoot = repositoryRoot(args.command === "claim-gate" ? args.worktree : process.cwd());
-  if (args.command === "claim-gate" && !sameCheckout(checkoutRoot, args.worktree)) {
-    throw new WorkflowValidationError(["claim-gate requires the Worker checkout root"]);
+  if (["record-context", "record-delivery"].includes(args.command)) {
+    const input = readFileSync(0, "utf8");
+    if (Buffer.byteLength(input) > 64 * 1024)
+      throw new Error("task input exceeds 64 KiB");
+    args.input = parseJsonDocument(input);
+    if (detectUnsafeText(input).length)
+      throw new Error("task input contains unsafe data");
+  }
+  const targetsCheckout = ["claim-gate", "begin-gate"].includes(args.command);
+  const checkoutRoot = repositoryRoot(
+    targetsCheckout ? args.worktree : process.cwd(),
+  );
+  if (targetsCheckout && !sameCheckout(checkoutRoot, args.worktree)) {
+    throw new WorkflowValidationError([
+      "claim-gate requires the Worker checkout root",
+    ]);
   }
   const sharedRoot = taskStateRoot(checkoutRoot);
   const localRoot = isLinkedWorktree(checkoutRoot) ? checkoutRoot : sharedRoot;
@@ -510,11 +633,32 @@ async function main() {
   );
   const readCurrentState = () =>
     readState(
-      existsSync(targetPath) || targetPath === sharedPath ? targetPath : sharedPath,
+      existsSync(targetPath) || targetPath === sharedPath
+        ? targetPath
+        : sharedPath,
       args.issueKey,
     );
   if (args.command === "show") {
     process.stdout.write(`${JSON.stringify(readCurrentState(), null, 2)}\n`);
+    return;
+  }
+  if (args.command === "runtime") {
+    const state = readCurrentState();
+    validateRouteState(state);
+    const runtime =
+      args.role === "worker"
+        ? state.executionRoute
+        : resolveRuntime(CONFIG, args.role, {
+            workerRoute: state.executionRoute,
+          });
+    process.stdout.write(
+      JSON.stringify(
+        runtimeArguments({
+          model: runtime.model,
+          reasoningEffort: runtime.reasoningEffort,
+        }),
+      ) + "\n",
+    );
     return;
   }
   const result = await withStateLock(targetPath, () =>
@@ -523,10 +667,159 @@ async function main() {
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 
+function validatePlanReference(value, issueKey) {
+  if (
+    value?.schemaVersion !== MARKDOWN_PLAN_SCHEMA ||
+    value.path !== ".agents/task-state/" + issueKey + "-plan.md" ||
+    !Number.isSafeInteger(value.revision) ||
+    value.revision < 1
+  )
+    throw new Error("invalid implementation plan reference");
+  return value;
+}
+
+function validateWorkItem(value) {
+  const allowed = [
+    "summary",
+    "outcome",
+    "acceptance",
+    "userDecisions",
+    "constraints",
+    "sourceRef",
+    "scrum",
+    "dependencies",
+  ];
+  if (
+    Object.keys(value).some((key) => !allowed.includes(key)) ||
+    !nonEmptyString(value.summary) ||
+    !nonEmptyString(value.outcome)
+  )
+    throw new Error("work item requires summary/outcome and supported fields");
+  if (
+    !Array.isArray(value.acceptance) ||
+    !value.acceptance.length ||
+    value.acceptance.some(
+      (item) =>
+        !plainObject(item) ||
+        !/^[A-Za-z0-9_-]+$/.test(item.id ?? "") ||
+        !nonEmptyString(item.text),
+    ) ||
+    new Set(value.acceptance.map((item) => item.id)).size !==
+      value.acceptance.length
+  )
+    throw new Error("acceptance requires unique IDs and text");
+  for (const key of ["userDecisions", "constraints"]) {
+    if (!Array.isArray(value[key]) || !value[key].every(nonEmptyString))
+      throw new Error(key + " must be a string array");
+  }
+  if (!isSourceRef(value.sourceRef)) throw new Error("invalid sourceRef");
+  if (
+    value.scrum != null &&
+    (!plainObject(value.scrum) ||
+      Object.keys(value.scrum).some(
+        (key) => !["provider", "key", "url"].includes(key),
+      ) ||
+      typeof value.scrum.provider !== "string" ||
+      !/^[a-z][a-z0-9-]*$/.test(value.scrum.provider) ||
+      !nonEmptyString(value.scrum.key) ||
+      /[\s\0]/u.test(value.scrum.key) ||
+      !isHttpsUrl(value.scrum.url))
+  )
+    throw new Error(
+      "scrum requires provider, external item key and credential-free HTTPS URL",
+    );
+  if (
+    !Array.isArray(value.dependencies) ||
+    value.dependencies.some(
+      (item) =>
+        !plainObject(item) ||
+        !nonEmptyString(item.key) ||
+        !["hard", "coordination"].includes(item.kind) ||
+        (item.kind === "hard" &&
+          (!["merged", "done"].includes(item.requiredMilestone) ||
+            typeof item.verified !== "boolean" ||
+            !nonEmptyString(item.evidence))) ||
+        (item.kind === "coordination" && !nonEmptyString(item.boundary)),
+    )
+  )
+    throw new Error("invalid dependency structure");
+  return { ...value, sourceRef: value.sourceRef ?? null };
+}
+
+function validateDelivery(value, issueKey) {
+  const allowed = [
+    "repository",
+    "remoteUrl",
+    "baseBranch",
+    "headBranch",
+    "pullRequest",
+    "evidenceDestination",
+    "allowedOperations",
+  ];
+  if (
+    Object.keys(value).some((key) => !allowed.includes(key)) ||
+    value.repository !== REPOSITORY ||
+    value.remoteUrl !== REMOTE_URL ||
+    value.baseBranch !== BASE_BRANCH ||
+    issueFromBranch(value.headBranch) !== issueKey
+  )
+    throw new Error(
+      "delivery identity must match configured repository, base and task branch",
+    );
+  if (
+    value.pullRequest != null &&
+    (!Number.isSafeInteger(value.pullRequest.number) ||
+      value.pullRequest.number < 1 ||
+      value.pullRequest.url !==
+        "https://github.com/" +
+          value.repository +
+          "/pull/" +
+          value.pullRequest.number)
+  )
+    throw new Error("invalid pull request identity");
+  if (
+    value.evidenceDestination != null &&
+    !isHttpsUrl(value.evidenceDestination)
+  )
+    throw new Error("invalid evidence destination");
+  if (
+    !Array.isArray(value.allowedOperations) ||
+    !value.allowedOperations.every(nonEmptyString)
+  )
+    throw new Error("allowedOperations must be explicit");
+  return {
+    ...value,
+    pullRequest: value.pullRequest ?? null,
+    evidenceDestination: value.evidenceDestination ?? null,
+  };
+}
+
 function updateState(args, state, checkoutRoot, targetPath) {
   let status = "recorded";
+  if (
+    state.activeCheckoutGate &&
+    [
+      "record-context",
+      "record-delivery",
+      "record-plan",
+      "retire-task",
+      "register-task",
+    ].includes(args.command)
+  ) {
+    throw new Error(
+      "end the active checkout gate before changing task metadata",
+    );
+  }
+  if (
+    ["record-route", "escalate-route"].includes(args.command) &&
+    detectUnsafeText(JSON.stringify(args)).length
+  ) {
+    throw new Error("execution route contains unsafe data");
+  }
   if (args.command === "register-task") {
+    const existing = state.tasks[args.role];
     const next = {
+      ...(existing && !existing.retired ? existing : {}),
       threadId: args.threadId,
       ...(args.kind ? { kind: args.kind } : {}),
       ...(args.hostId ? { hostId: args.hostId } : {}),
@@ -537,23 +830,30 @@ function updateState(args, state, checkoutRoot, targetPath) {
         : {}),
       retired: false,
     };
-    const existing = state.tasks[args.role];
     const planner = state.tasks.planner;
     if (
       args.role === "worker" &&
       planner?.kind === "task" &&
       !planner.retired &&
       (!planner.worktree ||
-        !args.worktree ||
-        path.resolve(planner.worktree) !== path.resolve(args.worktree) ||
+        !next.worktree ||
+        path.resolve(planner.worktree) !== path.resolve(next.worktree) ||
         !planner.branch ||
-        planner.branch !== args.branch)
+        planner.branch !== next.branch)
     ) {
       throw new WorkflowValidationError([
         "Worker must share the visible Planner worktree and branch",
       ]);
     }
-    if (existing && existing.threadId !== args.threadId && !existing.retired) {
+    if (
+      existing &&
+      !existing.retired &&
+      (existing.threadId !== args.threadId ||
+        (existing.worktree &&
+          args.worktree &&
+          !sameCheckout(existing.worktree, args.worktree)) ||
+        (existing.branch && args.branch && existing.branch !== args.branch))
+    ) {
       throw new WorkflowValidationError([
         `${args.role} is already registered to another active task`,
       ]);
@@ -564,9 +864,15 @@ function updateState(args, state, checkoutRoot, targetPath) {
       state.tasks[args.role] = next;
     }
   } else if (args.command === "record-route") {
-    const next = createExecutionRoute(args);
-    if (state.executionRoute && ["classification", "rationale", "riskSignals"].every((key) =>
-      JSON.stringify(state.executionRoute[key]) === JSON.stringify(next[key]))) {
+    const next = createExecutionRoute(args, CONFIG);
+    if (
+      state.executionRoute &&
+      ["classification", "rationale", "riskSignals"].every(
+        (key) =>
+          JSON.stringify(state.executionRoute[key]) ===
+          JSON.stringify(next[key]),
+      )
+    ) {
       status = "already-recorded";
     } else if (state.executionRoute) {
       throw new WorkflowValidationError([
@@ -579,42 +885,69 @@ function updateState(args, state, checkoutRoot, targetPath) {
     }
   } else if (args.command === "escalate-route") {
     const revision = validateRouteState(state);
-    if (state.activeCheckoutGate) throw new WorkflowValidationError(["end the active checkout gate before escalation"]);
+    if (state.activeCheckoutGate)
+      throw new WorkflowValidationError([
+        "end the active checkout gate before escalation",
+      ]);
     verifyWorkerCheckout(state, checkoutRoot);
-    const next = createExecutionRoute(args);
+    const next = createExecutionRoute(args, CONFIG);
     // Retry identity describes the request, not today's potentially edited configuration.
-    const sameRequest = ["classification", "rationale", "riskSignals"].every((key) =>
-      JSON.stringify(state.executionRoute[key]) === JSON.stringify(next[key]));
+    const sameRequest = ["classification", "rationale", "riskSignals"].every(
+      (key) =>
+        JSON.stringify(state.executionRoute[key]) === JSON.stringify(next[key]),
+    );
     if (args.expectedRevision === revision - 1 && sameRequest) {
       status = "already-recorded";
     } else {
-      if (args.expectedRevision !== revision) throw new WorkflowValidationError(["stale execution route revision; read current state before escalating"]);
-      if (ROUTE_LEVELS[next.classification] <= ROUTE_LEVELS[state.executionRoute.classification]) {
-        throw new WorkflowValidationError(["escalation must move upward: bounded/routine -> standard/complex -> high-risk -> exceptional"]);
+      if (args.expectedRevision !== revision)
+        throw new WorkflowValidationError([
+          "stale execution route revision; read current state before escalating",
+        ]);
+      if (
+        ROUTE_LEVELS[next.classification] <=
+        ROUTE_LEVELS[state.executionRoute.classification]
+      ) {
+        throw new WorkflowValidationError([
+          "escalation must move upward: bounded/routine -> standard/complex -> high-risk -> exceptional",
+        ]);
       }
-      state.executionRouteHistory = [...(state.executionRouteHistory ?? []), { revision, route: state.executionRoute }];
+      state.executionRouteHistory = [
+        ...(state.executionRouteHistory ?? []),
+        { revision, route: state.executionRoute },
+      ];
       state.executionRoute = next;
       state.executionRouteRevision = revision + 1;
     }
-  } else if (args.command === "record-context") {
-    const next = {
-      materialRevision: args.contextRevision,
-      sharedPath: args.contextPath,
-    };
-    if (JSON.stringify(state.context) === JSON.stringify(next)) {
-      status = "already-recorded";
-    } else if (
-      state.context &&
-      args.contextRevision <= state.context.materialRevision
+  } else if (["record-context", "record-delivery"].includes(args.command)) {
+    const field = args.command === "record-context" ? "workItem" : "delivery";
+    const next =
+      field === "workItem"
+        ? validateWorkItem(args.input)
+        : validateDelivery(args.input, args.issueKey);
+    const current = state[field];
+    const revision = current?.revision ?? 0;
+    const { revision: ignored, ...previous } = current ?? {};
+    if (
+      isDeepStrictEqual(previous, next) &&
+      [revision, revision - 1].includes(args.expectedRevision)
     ) {
-      throw new WorkflowValidationError([
-        "material context revision must increase",
-      ]);
+      status = "already-recorded";
     } else {
-      state.context = next;
+      if (args.expectedRevision !== revision)
+        throw new Error("stale " + field + " revision; reread state");
+      if (
+        field === "delivery" &&
+        current &&
+        ["repository", "remoteUrl", "baseBranch", "headBranch"].some(
+          (key) => current[key] !== next[key],
+        )
+      ) {
+        throw new Error("recorded delivery checkout identity cannot change");
+      }
+      state[field] = { revision: revision + 1, ...next };
     }
   } else if (args.command === "record-plan") {
-    const planPath = path.join(checkoutRoot, args.planPath);
+    const planPath = containedPath(checkoutRoot, args.planPath);
     if (!existsSync(planPath)) {
       throw new WorkflowValidationError([
         "implementation plan file does not exist",
@@ -670,6 +1003,16 @@ function updateState(args, state, checkoutRoot, targetPath) {
       state.deliveredEvents[args.eventKey] = args.targetThreadId;
     }
   } else if (args.command === "record-gate") {
+    const prefix =
+      ".agents/evidence/" + args.issueKey + "/" + args.observedSha + "/";
+    if (!args.resultPath.startsWith(prefix))
+      throw new Error("result path must belong to task and observed commit");
+    const resultFile = containedPath(checkoutRoot, args.resultPath);
+    if (
+      !lstatSync(resultFile).isFile() ||
+      lstatSync(resultFile).isSymbolicLink()
+    )
+      throw new Error("result must be a regular file");
     const next = { observedSha: args.observedSha, resultPath: args.resultPath };
     if (JSON.stringify(state.gates[args.gate]) === JSON.stringify(next)) {
       status = "already-recorded";
@@ -681,13 +1024,24 @@ function updateState(args, state, checkoutRoot, targetPath) {
     const worktree = path.resolve(args.worktree);
     const workerTask = state.tasks.worker;
     let roleTask = state.tasks[role];
+    verifyWorkerCheckout(state, worktree, args.observedSha);
     if (args.command === "claim-gate") {
-      verifyWorkerCheckout(state, worktree, args.observedSha);
-      if (roleTask && !roleTask.retired && roleTask.threadId !== args.threadId) {
-        throw new WorkflowValidationError([`${role} is already registered to another active task`]);
+      if (
+        roleTask &&
+        !roleTask.retired &&
+        roleTask.threadId !== args.threadId
+      ) {
+        throw new WorkflowValidationError([
+          `${role} is already registered to another active task`,
+        ]);
       }
       if (!roleTask || roleTask.retired) {
-        roleTask = { threadId: args.threadId, worktree, branch: workerTask.branch, retired: false };
+        roleTask = {
+          threadId: args.threadId,
+          worktree,
+          branch: workerTask.branch,
+          retired: false,
+        };
       }
     }
     if (!workerTask || workerTask.retired || !workerTask.worktree) {

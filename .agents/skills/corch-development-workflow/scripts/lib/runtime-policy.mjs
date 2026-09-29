@@ -64,3 +64,45 @@ export function runtimeArguments(runtime) {
   validateRuntime(runtime);
   return { model: runtime.model, thinking: runtime.reasoningEffort };
 }
+
+export const EXECUTION_ROUTE_SCHEMA = "execution-route/v2";
+const RISK_SIGNALS = new Set(["crossPackageCoupling", "noveltyOrAmbiguity", "highBlastRadius",
+  "securityPrivacyBilling", "infrastructureOrDeployment", "heavyValidation"]);
+
+export function validateExecutionRoute(route, expected = {}) {
+  if (!object(route) || route.schemaVersion !== EXECUTION_ROUTE_SCHEMA ||
+      !/^[A-Z][A-Z0-9]*-[1-9]\d*$/.test(route.issueKey ?? "") ||
+      (expected.issueKey !== undefined && route.issueKey !== expected.issueKey))
+    throw new Error("execution route issue identity is invalid");
+  if (!Object.hasOwn(DEFAULT_WORKER_RUNTIMES, route.classification)) throw new Error("classification is invalid");
+  validateRuntime({ model: route.model, reasoningEffort: route.reasoningEffort });
+  if (!Array.isArray(route.riskSignals) || new Set(route.riskSignals).size !== route.riskSignals.length ||
+      route.riskSignals.some((signal) => !RISK_SIGNALS.has(signal))) throw new Error("riskSignals are invalid");
+  if (typeof route.rationale !== "string" || !route.rationale.trim()) throw new Error("rationale is required");
+  return route;
+}
+
+export function createExecutionRoute({ issueKey, classification, riskSignals = [], rationale }, config = {}) {
+  return validateExecutionRoute({ schemaVersion: EXECUTION_ROUTE_SCHEMA, issueKey, classification,
+    riskSignals: [...riskSignals].sort(), ...resolveRuntime(config, "worker", { classification }), rationale });
+}
+
+export function validateRouteState(state) {
+  if (!state.executionRoute) throw new Error("record the execution route before dispatch");
+  validateExecutionRoute(state.executionRoute, { issueKey: state.issueKey });
+  const revision = state.executionRouteRevision ?? 1;
+  const history = state.executionRouteHistory ?? [];
+  if (!Number.isSafeInteger(revision) || revision < 1 || !Array.isArray(history) || history.length !== revision - 1) {
+    throw new Error("invalid execution route revision/history");
+  }
+  let previousLevel = -1;
+  for (const [index, snapshot] of history.entries()) {
+    if (snapshot?.revision !== index + 1) throw new Error("invalid execution route history revision");
+    validateExecutionRoute(snapshot.route, { issueKey: state.issueKey });
+    const level = ROUTE_LEVELS[snapshot.route.classification];
+    if (level <= previousLevel) throw new Error("execution route history must escalate");
+    previousLevel = level;
+  }
+  if (ROUTE_LEVELS[state.executionRoute.classification] <= previousLevel) throw new Error("execution route history must escalate");
+  return revision;
+}

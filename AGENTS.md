@@ -6,13 +6,14 @@ by the user or another task.
 ## Scope and sources of truth
 
 This repository contains Corch, a reusable Codex delivery workflow: role skills,
-hooks, deterministic helpers, protocol contracts, and tests.
+deterministic helpers, protocol contracts, and tests.
 
 - Source owns implementation; tests verify observable behavior.
-- `.agents/workflow.json` owns repository, issue, CI, and setup settings.
+- `.agents/workflow.json` owns repository, scrum provider, issue, CI, and setup settings.
 - The adopting project's accepted specifications own product behavior.
-- The user-selected input and approved local context own planning and acceptance;
-  an external tracker is optional.
+- The external scrum provider owns the backlog, work items, priority and lifecycle.
+  Refinement maintains scope, acceptance and dependencies there. Direct user
+  decisions prevail; the local task record holds agreed context and execution state.
 - Keep operational state, plans, logs, and evidence in ignored `.agents/`
   directories. They are not public documentation.
 
@@ -26,18 +27,26 @@ assigned. A named role uses exactly its skill: `$corch-delivery-coordinator`,
 `$corch-refinement`, `$corch-planner`, `$corch-worker`, `$corch-reviewer`,
 or `$corch-tester`.
 
-Keep eligible bounded work in the current task and checkout. Work requiring
-tracked ownership, coordination, or material risk handling follows the configured
-issue workflow. Preserve assigned families, approvals, and active protocols.
-Shared helpers and packet contracts belong to `corch-development-workflow`.
+The router keeps eligible bounded changes in the current chat and checkout.
+Coordinated delivery uses Refinement, Coordinator, Planner and Worker; the
+Worker selects initial and repeat Reviewer/Tester passes proportionally.
+Follow explicit user instructions for direct work, required roles or waived
+checks. Preserve assigned families, approvals, and active checkout ownership.
+Routing eligibility, shared helpers and data conventions belong to
+`corch-development-workflow`.
 
-Read `.agents/workflow.json` before constructing delivery packets. `TASK-N`,
-`codex/task-n-<slug>`, `main`, and `npm run verify:ci` in skill examples represent
+Read `.agents/workflow.json` before recording delivery identity. `TASK-N`,
+`corch/task-n-<slug>`, `main`, and `npm run verify:ci` in skill examples represent
 the configured prefix, branch convention, base branch, and CI command. Example
 GitHub addresses are synthetic; configure the delivery repository before
-coordinated implementation. Inputs may be conversations, documents or tracker
-items. Use an internal key and optional `sourceRef`; never require a ticket or
-external evidence destination. Credentials never belong in this file.
+coordinated implementation. Inputs may start in conversations, documents or
+provider items; normal Refinement resolves them to an external backlog item.
+Keep its identity in `workItem.scrum` and original input in `sourceRef`. Internal
+keys and provider keys may differ. Resolve the provider from configuration or
+the user's selected project; missing access is a concrete refinement blocker,
+not permission to substitute a local backlog. Direct delivery follows the
+router's eligibility rules or an explicit user instruction. Credentials never
+belong in this file.
 
 ## Engineering and authorization
 

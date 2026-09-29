@@ -1,220 +1,303 @@
-# Delivery Packet Registry v3
+# Corch shared data and mechanical commands
 
-- `task-context/v3`: compact normalized source planning data: one outcome,
-  acceptance, direct user decisions, dependencies, constraints, and links. The coordinator
-  stages it in shared ignored context before Planner creation; UserPromptSubmit
-  hydrates the shared Planner/Worker checkout. Status/comments do not change
-  material revision.
-- `task-state/v2`: `workflowProtocol=delivery-v3`, task identities, execution
-  route, context path/revision, shared checkout lease, gate results, retirement,
-  and delivered events. `tasks.planner` records require `kind="task"` for a
-  visible Planner. The Planner creates the plan before Worker creation;
-  both tasks use the same registered worktree/branch.
-- `execution-route/v2`: immutable runtime snapshot for implementation. Configuration
-  and defaults are resolved by `lib/runtime-policy.mjs`; validation checks shape, not
-  equality with current configuration. `task-state/v2.executionRouteRevision`
-  defaults to 1 for old state; `executionRouteHistory` contains prior
-  `{revision, route}` snapshots. `escalate-route --expected-revision N` atomically
-  advances upward with classification, risk signals and rationale, rejecting stale
-  revisions and active checkout leases. Identical retries preserve the snapshot.
-- `worker-bootstrap/v2`: work-item key/title/source reference, reserved branch, exact delivery
-  target, execution route, and local context path.
-  Record the route once with `task-state.mjs record-route`, then pass the bootstrap
-  identity to `prepare-worker-bootstrap.mjs`; its CLI input may omit `executionRoute`.
-  Both roles read the saved route from `--worktree` (default current directory).
-  An embedded snapshot is validated but never overrides saved state; missing or
-  malformed state fails without fallback. The helper returns a complete `bootstrap`
-  alongside dispatch fields and writes nothing. Stage that object as
-  `.agents/task-state/TASK-N-bootstrap-input.json` in the primary checkout before
-  Planner creation. Stored packets remain strict v2; no separate route file is needed.
-  New Planner prompts carry `Corch bootstrap: TASK-N`; the synchronous hook
-  validates it against staged state/input, safely attaches the reserved branch,
-  hydrates context and registers the hook session ID before dependency verification.
-  SessionStart is read-only and exposes a validated Corch session ID; unmarked
-  prompts do not trigger preparation.
-  New dispatch uses `prepare-worker-bootstrap.mjs --role planner --coordinator ID`
-  first, then `--role worker --plan-revision N --worktree <absolute-checkout>` only
-  after the user approves the saved plan. The latter reads the latest saved route,
-  returns explicit runtime and `worker-route:N` deduplication metadata, and reads
-  the plan without another planning pass. Capacity/setup holds, handoff waits,
-  and readiness turns are invalid; the packet never embeds full source text.
-- `implementation-plan/v4`: the authoritative Markdown at
-  `.agents/task-state/TASK-N-plan.md`, starting with `# TASK-N Implementation plan`.
-  New launches request the code-first format owned by `$corch-planner`: executable
-  edit instructions in the file, decision discussion and approval summary in chat.
-  The Planner saves the file before requesting one approval for that revision;
-  the Worker reads it from the same checkout. State stores
-  only `{schemaVersion, path, revision}`; no duplicate content or content hash.
-  Registration checks file identity, not design quality; the Planner and Worker
-  must assess completeness. Amend the same Markdown and increment its reference.
-  A clear direct user decision authorizes its revision without an approval loop.
-- `delivery-preflight/v1` / `delivery-preflight-result/v1`: unchanged dependency
-  snapshot and assessment contracts. Required only when selected work or its known
-  delivery neighborhood contains hard or coordination relationships. Dependency-free
-  work skips the helper and packet, including unrelated Coordinator items. Always
-  check readiness, completion, capacity, active families and ownership. When applied,
-  verify directed dependencies, block unmet merge/Done milestones and enforce
-  declared concurrency boundaries. Direct delivery needs no task packets.
-- `gate-delta-assessment/v1`: local ancestry, changed paths/statistics, explicit
-  impact/rationale, action, acceptance focus, prior finding IDs, and requested result.
-  Dispatch computes and embeds it directly in `gate-attempt/v1`; no assessment file
-  is needed. Standalone assessment remains available for deciding on another attempt.
-- `gate-attempt/v1`: role, PR/current/comparison commits, topology/action,
-  comparison range, impact/rationale, changed paths/statistics, acceptance focus, prior finding IDs, validation, and
-  requested result. Fresh chat prompts add Worker identity, repository/branch,
-  absolute checkout, current acceptance/user decisions/waivers, context/plan
-  references and result destination. No transcript, implementation narrative,
-  full source packet, plan, role contract or diff is transferred.
-- `review-result/v2` / `test-result/v2`: complete first/current technical result.
-- `review-amendment/v1` / `test-amendment/v1`: base result path, issue/current/
-  comparison commits, verdict/summary, acceptance updates, explicit carry-forward
-  rationales, current findings/failures, explicit resolved finding/failure IDs,
-  targeted commands, and artifacts. The composer outputs the complete validated
-  v2 result and rejects any base finding/failure without a current or resolved
-  disposition.
-- `gate-selection/v2`: final Worker gate decisions, evidence, outcomes,
-  current-head local/remote CI, and optional explicit user waivers. Unwaived
-  checks retain their existing passing handoff requirements.
-- `refinement-result/v1`: event key/revision, internal key/source reference, change summary,
-  readiness, blockers, and dependency links.
+Roles own workflow judgments. These conventions carry the current target and
+actual results without prescribing a generated prompt or a sequence of packets.
+Read `.agents/workflow.json` for repository, scrum provider, prefix, base, runtime and setup.
+`TASK-N` and branch examples below stand for those configured values.
 
-## Input and evidence destinations
+## External scrum provider
 
-`gate.mjs dispatch` reads JSON from stdin: `issueKey`, `gate` (`review` or
-`test`), absolute `worktree`, matching saved `projectId`/`projectPath` from
-`list_projects`, `observedSha`, optional `comparedFromSha`, `pullRequest`
-(`number`, `url`), current string arrays `acceptanceCriteria` and `userDecisions`,
-optional contract `waivers`, `validation` command outcomes, `reviewDecision`
-(`decision`, `rationale`), positive stable `attempt` number, and checkout-relative
-`resultPath` under `.agents/evidence/<issue>/<sha>/`. Optional `delta` accepts
-`{impact, rationale, acceptanceFocus?, priorFindingIds?}`, with impact one of
-`irrelevant`, `affected`, `material`. Gate and commits come from the surrounding
-request. A complete `gate-delta-assessment/v1` is also accepted: its identity and
-all recomputed Git facts must agree. Git runs in the absolute Worker checkout.
-The attempt embeds the comparison range, topology, judgment, action, changed files,
-statistics, focus, prior IDs and requested result. No delta keeps first-attempt behavior.
-Refresh the current user target
-before preparing this input; never reconstruct it from the implementation story.
-The helper reads state and checks the registered checkout/branch/commit, local
-context/plan references and Reviewer completion before a required Tester.
+For coordinated delivery, the external scrum provider owns the backlog, priority,
+item lifecycle, acceptance and dependency relationships. Conversations/documents
+supply requests; Refinement turns them into verified provider items. Direct user
+decisions override older provider content. The local record holds the agreed context snapshot and Corch
+execution state, including approval, runtime, ownership and technical results.
+It does not replace the external backlog.
 
-Output `action=create` supplies exact `create_thread` arguments, including title,
-complete prompt, runtime and local saved-project target. `reuse` supplies
-`send_message_to_thread` arguments without runtime overrides. `delivered` means
-the attempt event was already recorded; `recover` identifies an unclaimed chat
-to inspect before any resend. Record the returned `eventKey` after confirmed
-dispatch. Ambiguous app calls require a target/title/event check, never blind
-recreation. Keep existing gate chats, including older forks, until retirement.
+Configure `scrum.provider` (for example `jira`, `linear` or `github`) and a
+credential-free `scrum.projectUrl` in `.agents/workflow.json`, or resolve them from
+the user's selected project/item. Null/missing fields mean unresolved, not local
+mode. Discover the provider's supported item types, fields, status transitions,
+parent/dependency links and attachment capabilities through available tools.
+Use a connected provider tool or a relevant adapter such as `$corch-jira-api`.
+No provider CLI, dispatcher, normalized status engine or new executable is needed.
+Keep credentials and private deployment identifiers in runtime configuration.
 
-Fresh gates first run `claim-gate --issue KEY --gate review|test --thread <validated-session-id>
---worktree <absolute-worker-checkout> --sha <commit>`. This operation selects the
-supplied checkout even when invoked from the primary directory, verifies the
-registered Worker and actual Git identity, and registers the gate and acquires its
-lease atomically. All inspection and evidence operations use that same checkout.
-The Worker must stop checkout activity before dispatch, wait for completion and
-release the lease afterward. Missing session identity or a failed claim blocks
-inspection. Corrections claim again in the same gate chat; no readiness exchange,
-additional checkout, setup or subagents. Result/amendment schemas remain unchanged.
-
-The gate command offers top-level and per-command `--help`:
-
-| Command | Inputs and output |
+| Role | Provider responsibility |
 | --- | --- |
-| `gate.mjs selection` | `--issue`, `--pr`, `--head-branch`, `--selection`; existing validated selection summary and marker |
-| `gate.mjs assess` | `--gate review\|test`, `--from`, `--to`, `--impact`, `--rationale`; repeatable `--acceptance`/`--finding`; assessment JSON |
-| `gate.mjs compose` | `--gate review\|test`, `--base`, `--amendment`; complete v2 result on stdout |
-| `gate.mjs dispatch` | JSON stdin; existing create/reuse/delivered/recover response |
+| Refinement | Read the relevant backlog, check duplicates, create/update the bounded item, acceptance and dependency relationships, then verify the saved result. |
+| Coordinator | Read the selected item and dependencies before dispatch; verify readiness, ownership and priority when prioritization is requested; reconcile lifecycle completion after verified merge and the project's completion criteria. |
+| Planner | Plan from the agreed snapshot and linked item; return material scope discrepancies without silently redefining the backlog. |
+| Worker | Keep authorized in-progress/blocked/review transitions and the eventual PR link current; disclose pending synchronization and never mark Done just for opening a PR. |
+| Reviewer | Review the agreed target; return findings to Worker without independently editing the provider item. |
+| Tester | Choose and publish acceptance evidence to the selected destination, which may be the provider item; return verified links without changing lifecycle status. |
 
-Selection, assessment and dispatch are read-only. Composition's optional `--output`
-creates only `.agents/evidence/<issue>/<sha>/<gate>-result.json` and refuses overwrite.
-It requires matching base identity, disposition of every previous finding/failure,
-and updated or explicitly carried acceptance criteria. State and leases remain
-owned by `task-state.mjs`.
+Reuse established destination/operation authorization. Merely configuring a
+provider or storing its URL grants none. Re-read affected fields after writes;
+inspect ambiguous outcomes before retrying to avoid duplicate items/comments.
+Do not overwrite concurrent provider edits from a stale local snapshot. Refresh
+material context before dispatch, preserving newer direct user decisions and
+reusing any existing approved family. Metadata-only changes do not restart roles.
 
-The `issue` field is a normalized work item, not a required external ticket.
-Its `key` is the stable internal key used for branches and local state. It may
-come from a conversation, document or any issue tracker. `issue.sourceRef` is
-optional: null means the current conversation; otherwise use a credential-free
-HTTPS URL, `codex://threads/<id>`, or a repository-relative document path. External
-`id`, `type`, `status` and `updated` metadata are optional in `task-context/v3`;
-normalization uses the internal key, `request`, `untracked` and retrieval time
-when no external metadata exists. Outcome and acceptance criteria remain required.
+An unresolved provider, inaccessible item or failed refinement write leaves new
+refinement pending with a concrete blocker; a local draft is not a refined external
+item. Existing authorized implementation can continue during an outage while
+reporting pending synchronization. The router's direct-delivery eligibility
+rules and explicit user instructions determine when work may proceed without a
+provider item; an outage does not change that eligibility. Direct delivery needs
+no task-family record. Evidence may remain local unless an external publication
+destination and operation have been selected.
 
-`worker-bootstrap/v2.issue.sourceRef` and `deliveryTarget.sourceRef` identify the
-same selected input. Plans and `refinement-result/v1` also use `sourceRef`.
-A reference identifies provenance; it never authorizes fetching unrelated data,
-mutating its source or publishing evidence there. A dependency's
-`dependencyVerified` means its directed relationship was verified in local
-context/user decisions or a native tracker link. No provider-specific link type
-or tracker account is required. Keep the milestone and concurrency checks.
+## Local execution record
 
-`prepare-report.mjs --issue TASK-N --pr N --gate review|test|handoff
---head-branch codex/task-n-<slug> --result <json-path>` validates the result and
-artifacts once, then returns the local Markdown `commentBody`, `marker`, `files`,
-and nested `prComment` (`status`, `marker`, `body`, `evidenceUrl`, `nativeUploads`,
-`browserRequired`). Review/test require `--profile`; handoff derives the profile
-from its selection and rejects a conflicting override. Invalid declared evidence
-blocks both views. `--dry-run` retains full validation and marks the output accordingly.
-Final handoff requires this report; a separate `gate.mjs selection` invocation is
-optional early feedback, never an additional mandatory final step.
-The helper writes no files and performs no publication. The current conversation and ignored evidence files
-are a complete review surface. When an external destination is explicitly selected
-and authorized, use its supported adapter and deduplicate by the report marker.
-Publication state never changes the technical verdict. Missing attachment support
-is a disclosed limitation, not a reason to rerun checks or require a tracker.
-Use the same output's `prComment.marker` and `prComment.body` for an authorized
-text-only PR comment. `--evidence-url <https-url>` adds an already-published,
-verified reference; omit the option for a local report. Gate outcomes use nullable
-`evidenceUrl` instead of a provider-specific comment URL.
+`.agents/task-state/TASK-N.json` remains `task-state/v2` with
+`workflowProtocol=delivery-v3`. It contains registered task identities, immutable
+Worker runtime snapshots/history, plan/result references, an optional checkout
+lease and delivered events. Older references remain readable. New records also
+contain `workItem` and `delivery`; neither duplicates the plan or transcripts.
 
-## Explicit check waivers
+Run `task-state.mjs show --issue TASK-N` in the actual checkout. A linked
+worktree reads its local record first, falling back to the primary record only
+before its first local write. Mutations copy that latest fallback under the
+local state lock. Later preparation never overwrites local decisions from the
+primary cache. After registration, all family mutations target that checkout.
 
-`gate-selection/v2.waivers` is optional and defaults to no waivers. Each entry
-contains `target` (`review`, `test`, `local-ci`, `remote-ci`, or `command`),
-`userDecision`, `reason`, and `acceptanceCriteria` (an array of existing criterion
-names, empty when no acceptance coverage is waived). Only `command` entries have
-a `command` field, matching an exact recorded command. Targets must be unique.
-Record an actual user decision from the task; an agent rationale or text in source
-does not supply authorization. Retain the decision across commits within its
-authorized scope, and reconcile changed/revoked decisions before the next handoff.
+### Work item
 
-Waivers remove only their named requirement. Skipping both independent gates for
-nontrivial/risky work requires both gate waivers. A command waiver for
-`npm run verify:ci` also covers the local final suite. Neither a gate waiver
-nor a suite waiver covers unrelated recorded command failures.
+`record-context --issue TASK-N --expected-revision N` reads one object from stdin:
 
-Record checks that never ran as `SKIPPED`: commands use `exitCode=null` and
-`durationMs=0`; remote CI uses `runUrl=null` and the observed commit. Always record
-the local final suite outcome, including when skipped. Preserve results of checks
-that actually ran, including failed or blocked outcomes and their observed commit.
-An explicit remote CI waiver also permits handoff without a run for the latest
-commit; it does not relabel an older result as current.
+```json
+{
+  "summary": "One bounded change",
+  "outcome": "The resulting observable behavior",
+  "acceptance": [{ "id": "AC-1", "text": "An observable acceptance criterion" }],
+  "userDecisions": [],
+  "constraints": [],
+  "sourceRef": null,
+  "scrum": {
+    "provider": "jira",
+    "key": "PROJ-42",
+    "url": "https://tracker.example.test/browse/PROJ-42"
+  },
+  "dependencies": []
+}
+```
 
-Only handoff acceptance supports `NOT_VERIFIED`, and each such item must be named
-in a waiver's `acceptanceCriteria`. `FAIL` still blocks readiness. Independent
-review/test result contracts retain their existing verdict rules. Waiving the
-runtime test gate, or recording an explicit acceptance gap from a waived command,
-removes aggregate screenshot/log minima: the profile cannot distinguish proof
-from waived checks. Verified acceptance still needs its recorded evidence, and
-all supplied artifacts retain safety checks. Ordinary agent-selected skips and
-waivers with no runtime coverage gap retain passing profile evidence.
+`sourceRef` may be null, a credential-free HTTPS URL, a repository-relative
+document path, or `codex://threads/ID`. It identifies the originating input.
+`scrum` identifies the verified external item with its provider, native key/ID
+and HTTPS URL; it can differ from both `sourceRef` and the internal `TASK-N` key.
+The example is synthetic. Use the real item and preserve its binding across
+context revisions; a provider move/replacement needs verified reconciliation.
+Legacy records, pending drafts and direct/local work may omit `scrum` or use
+null. The helper validates fields; it neither contacts the provider nor decides
+refinement readiness. Before dispatching legacy work, resolve its real provider
+item without discarding its plan, approval or active family.
 
-source and PR handoffs disclose waivers, actual results, and missing coverage.
-Waiver-bearing publication markers include a canonical waiver digest so revised
-decisions on the same commit are not mistaken for an unchanged publication.
-Waivers grant no merge, production,
-credential, destructive-action, or platform permission.
+A hard dependency has `key`, `kind: "hard"`, `requiredMilestone: "merged" | "done"`,
+`verified` and `evidence`. A coordination dependency has `key`,
+`kind: "coordination"` and a concrete non-overlapping `boundary`. The helper
+checks shape; Refinement verifies meaning and Coordinator decides readiness.
+
+Start with expected revision 0. The helper stores `workItem.revision` and
+increments it on changed content. An identical current/retried write is
+idempotent. Conflicting stale updates fail without overwriting newer decisions.
+Use file tools to stage stdin; never interpolate task text into shell code.
+
+### Delivery identity
+
+`record-delivery --issue TASK-N --expected-revision N` reads:
+
+```json
+{
+  "repository": "example/project",
+  "remoteUrl": "https://github.com/example/project.git",
+  "baseBranch": "main",
+  "headBranch": "corch/task-42-example",
+  "pullRequest": null,
+  "evidenceDestination": null,
+  "allowedOperations": []
+}
+```
+
+Use the real configured values and matching key, not these examples. Launch
+identity cannot change after recording. `delivery.revision` uses the same
+optimistic update semantics as context. Supply the full current object without
+its saved `revision`, preserving previously recorded decisions, when adding
+optional PR metadata: `{ "number": 123, "url": "https://github.com/owner/repo/pull/123" }`.
+An external evidence destination is an explicit HTTPS URL. Null means local
+delivery or a destination not yet selected. `allowedOperations` records the
+actual established operations, for example `commit`, `push`, `create-pr`,
+`publish-evidence`, `update-scrum-item`, `transition-scrum-item`, `ready-pr`; it grants nothing on its own. The agent must
+verify the corresponding user authorization. A source URL is not that authority.
+
+A PR is not an inherent prerequisite for any role. Its timing follows the
+validation needs described below; adding a PR/evidence URL alone does not
+invalidate technical results.
+
+## Remaining helpers
+
+All three executables are under `scripts/`, run with Node.js 22+ and Git, and
+have `--help`. They require no runtime npm dependencies in an adopting project.
+
+| Command | Responsibility |
+| --- | --- |
+| `prepare-worker-worktree.mjs` | With no arguments, Local Environment setup only. With `--issue`, `--thread`, `--worktree`, validate the task's prepared checkout/branch, register the real Planner and finish configured setup. |
+| `task-state.mjs show` | Read the selected record without taking the writer lock. |
+| `task-state.mjs record-context` / `record-delivery` | Store compact structured stdin with `--expected-revision`. |
+| `task-state.mjs record-route` | Save initial classification, rationale, signals and resolved runtime. |
+| `task-state.mjs runtime` | Read the runtime for `--role planner\|worker\|reviewer\|tester`; return app `model`/`thinking`, without generating a prompt. |
+| `task-state.mjs escalate-route` | Atomically record an evidenced upward route change with `--expected-revision`; no active checkout lease. |
+| `task-state.mjs register-task` | Record real role/thread/checkout/branch and optional host. Planner also uses `--kind task`. |
+| `task-state.mjs record-plan` | Record the existing ignored Markdown path and positive revision. |
+| `task-state.mjs claim-gate` | Atomically claim a registered Worker checkout and actual commit for a review/test thread. |
+| `task-state.mjs end-gate` | Release the matching gate/thread only after the owner confirms completion. |
+| `task-state.mjs record-gate` | Record an existing contained result file and its observed commit; no verdict interpretation. |
+| `task-state.mjs record-event` | Deduplicate a stable event against its real target after confirmed delivery. |
+| `task-state.mjs retire-task` | Retire the matching identity when its work is finished. |
+| `run-bounded-check.mjs` | Run `--issue KEY --name LABEL [--timeout-ms N] -- COMMAND ARG...`, saving sanitized bounded logs and the actual outcome. Default deadline is 180000 ms; choose a suitable explicit deadline for longer checks. |
+
+State mutations use an exclusive PID/token lock around read/validate/write.
+Do not steal a live, stale or unverifiable lock. Check its owner before removing
+only a confirmed abandoned lock file; never delete task state or clear a checkout
+lease to repair a writer lock. Metadata changes cannot overwrite an active lease.
+Legacy `begin-gate` remains an alias for a registered role, with the same checkout
+and commit verification; new instructions use `claim-gate`.
+
+Only one Reviewer/Tester uses the mutable Worker checkout at a time. The Worker
+creates/registers, claims, sends, waits and releases. Role initialization ends
+before claiming and assignment. On ambiguous app operations inspect the live
+target and delivered event before retrying. State records are not live UI state.
+No hook, dispatch executable or nested role orchestration is required.
+
+## Portable command execution
+
+Keep reusable helper logic in Node.js, using its filesystem/path APIs and
+executable-plus-argument process calls. Bash and PowerShell are not prerequisites
+for Corch. `lib/command-execution.mjs` owns the platform-specific process adapter:
+Windows uses `cmd.exe` for npm/pnpm/Corepack shims and `taskkill.exe` for process
+tree cleanup; Linux and macOS launch executables directly and stop owned process
+groups. Keep those operating-system branches inside the adapter.
+
+Setup `command`/`args` and bounded-check arguments describe an executable and
+literal arguments, not shell source. Put reusable multi-step logic in a Node.js
+file instead of embedding pipes, command chaining or shell variable expansion.
+An adopting project's own shell scripts may be invoked explicitly when their
+shell is an established project requirement.
+
+For interactive commands, inspect the actual host shell and use its quoting,
+environment-variable and stdin syntax. A PowerShell command from one chat is
+not a portable workflow instruction. Document common helper invocations as
+single-line `node` commands; label any shell-specific examples. Run verification
+on each supported operating system before claiming compatibility there.
+
+## Runtime and plan
+
+`lib/runtime-policy.mjs` owns defaults and `.agents/workflow.json.runtimes` owns
+overrides. Worker routes retain `execution-route/v2` and their original model,
+effort and revision history. Config edits affect new selections, not saved
+Worker snapshots. Reviewer normally follows the saved Worker runtime; role
+chats retain the runtime chosen at creation on subsequent passes.
+Escalation ordering remains bounded/routine, standard/complex, high-risk,
+exceptional. A stale revision requires a reread and rejected runtimes need
+explicit correction. Never silently substitute another model.
+
+The approved `.agents/task-state/TASK-N-plan.md` starts with
+`# TASK-N Implementation plan`. Its reference retains `implementation-plan/v4`,
+path and revision. The Planner owns design and plan updates; state checks file
+identity, not design quality. Direct user decisions preserve their own approval.
+The Worker and all other roles read the current record and referenced plan.
+
+## Common Reviewer/Tester result
+
+The Worker selects initial and repeat passes under its role skill. Only executed
+passes produce independent results; skipped roles are explained in the handoff.
+Both first and returning passes use readable Markdown at
+`.agents/evidence/TASK-N/<observedSha>/<role>-<attempt>.md`. Keep completed
+technical results and stable finding identities; state points at the latest
+actual result for that role. Legacy JSON result files remain historical records
+and need no automatic conversion. The following is required information, not
+an exact heading, phrase, word-count or file-type validator:
+
+- Identity: task, role, actual observed commit, relevant comparison range and
+  optional previous result. PR metadata is optional.
+- Verdict/summary: Reviewer uses `APPROVED`, `CHANGES_REQUESTED`, `BLOCKED`;
+  Tester uses `PASS`, `FAIL`, `BLOCKED`.
+- Acceptance covered, actual checks/outcomes, evidence references, explicit
+  gaps and user waivers. Reused evidence retains its original observed commit,
+  source result and rationale for applicability.
+- Stable findings/failures, including a disposition for each previously open
+  relevant item. Do not silently drop failures or turn a waiver into a pass.
+- Publication status and actual verified external links or local artifact paths.
+
+For its selected pass, Tester owns evidence sufficiency, inspection, sanitization
+and publication in its role contract. Helpers neither decode images nor decide
+whether a screenshot, log or other artifact proves acceptance. There are no evidence profiles/quotas,
+mandatory reports, attempt packets, gate selection schemas or amendments.
+On return, update the common result and retain earlier technical observations.
+
+Worker decides subsequent role passes from changed behavior and remaining
+uncertainty. It may verify a straightforward fix itself and document that
+resolution without changing the original independent verdict or observed commit.
+If it cannot establish the fix/impact, return to the appropriate existing role.
+Neither a changed SHA nor an older review automatically demands another pass.
+
+## Handoff and publication
+
+The Worker writes `.agents/task-state/TASK-N-handoff.md` with current outcomes,
+initial role selections and rationale, original role results, findings
+dispositions, repeat-pass reasoning, evidence links and confidence gaps.
+This is the human handoff, not a serialized gate.
+Record each explicit waiver's user decision, reason, exact check and affected
+acceptance here. `SKIPPED` means not executed; unverified acceptance is
+`NOT_VERIFIED`, never PASS. Preserve real failures, blocked outcomes and older
+observations. A failure requires a demonstrated fix or revised user target.
+
+When no Tester was selected, the Worker preserves and publishes its actual
+validation evidence within existing authorization. Inspect and sanitize artifacts,
+keep them contained in the task's evidence directory, and explain what they prove
+and who produced them. An omitted Tester is not an independent PASS, and evidence
+publication alone never requires creating a Tester. Direct delivery reports its
+checks and evidence in the current chat without manufacturing a task-family record.
+
+Tester may publish to an already selected destination during its pass. For a
+future PR, save technical evidence first and publish on a later publication-only
+request. That request reads saved artifacts without source inspection or test
+execution, needs no checkout execution lease, and does not issue a new verdict.
+Preserve the technical result; append a publication receipt or return links for
+the handoff. An upload failure changes publication status, not the test verdict.
+Verify the destination and prior uploads/comments before retrying ambiguity.
+Local evidence is sufficient when no external destination was selected.
+
+## PR timing and readiness
+
+Default to PR creation at local readiness after the selected independent checks
+and necessary corrections. After a coherent candidate and focused local checks,
+create a draft earlier when it unlocks the next required validation step: PR-only
+CI, a preview deployment or a required integration environment. If a branch push
+provides the same validation, use that without advancing PR creation. Record the
+concrete reason in the existing handoff, or current chat for direct delivery.
+
+Use existing destination-specific authority for the push, PR and any preview or
+integration action; draft creation grants no merge or production authority.
+Review can proceed while remote CI runs when its work does not depend on those
+results. Supply the Tester with the required environment and verify its deployed
+commit before the dependent pass. Keep shared-checkout activity serialized.
+An available draft PR can be the authorized evidence destination immediately.
+
+Opening a draft does not declare readiness. Before marking it ready or handing
+off, complete required checks and corrections, inspect required remote CI for
+the actual current head, and provide evidence and the updated change summary.
+Preserve explicit waivers and their coverage gaps; unresolved failures need a
+demonstrated fix or revised user target. Unavailable unwaived required checks
+block readiness and remain disclosed. Rerun only checks affected by relevant
+code/environment changes or failure remediation. No new approval or timing
+packet is required when the action is already authorized.
 
 ## On-demand retrospective
 
-Compare five completed deliveries before a workflow change with five afterward
-once both samples exist. Use task history, existing check logs, and gate results
-to report: elapsed time from implementation delegation to first source edit;
-approval interruptions requiring a user response; repeated checks without a
-relevant code, environment, or failure-remediation change; and distinct defects
-found by each gate and accepted by the Worker. Link the evidence, note scope and
-risk differences between samples, and mark unavailable measurements unknown.
-Use those same results to assess whether amendments avoided repeated review work
-and justify their maintenance cost.
-This is a manual assessment, not a delivery gate or scheduled task; add no
-per-delivery tracking files, instrumentation, or dashboard.
+When five comparable deliveries before and after exist, compare time to first
+edit, approval interruptions, repeated checks without a relevant change, and
+distinct defects accepted from independent roles. Link existing evidence and
+mark missing measurements unknown. This is a manual assessment, not another
+tracking file, dashboard, scheduled job or delivery gate.

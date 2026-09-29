@@ -2,6 +2,10 @@
   "repository": "example/project",
   "baseBranch": "main",
   "issuePrefix": "TASK",
+  "scrum": {
+    "provider": null,
+    "projectUrl": null
+  },
   "localCiCommand": "npm run verify:ci",
   "runtimes": {},
   "setup": {

@@ -14,6 +14,19 @@ export function validateConfig(value) {
     fail("repository must be owner/name");
   if (!/^[A-Z][A-Z0-9]*$/.test(value.issuePrefix ?? ""))
     fail("issuePrefix must be an uppercase project key");
+  if (value.scrum !== undefined) {
+    if (!value.scrum || typeof value.scrum !== "object" || Array.isArray(value.scrum) || Object.keys(value.scrum).some((key) => !["provider", "projectUrl"].includes(key)))
+      fail("scrum must contain only provider and projectUrl; keep credentials at runtime");
+    if (value.scrum.provider != null && (typeof value.scrum.provider !== "string" || !/^[a-z][a-z0-9-]*$/.test(value.scrum.provider)))
+      fail("scrum.provider must be a provider identifier or null");
+    if (value.scrum.projectUrl != null) {
+      let url;
+      try { url = new URL(value.scrum.projectUrl); } catch { /* Report a field error below. */ }
+      if (typeof value.scrum.projectUrl !== "string" || !value.scrum.projectUrl.startsWith("https://") ||
+          /[\s<>()[\]\\]/u.test(value.scrum.projectUrl) || !url || url.protocol !== "https:" || url.username || url.password)
+        fail("scrum.projectUrl must be a credential-free HTTPS URL or null");
+    }
+  }
   if (
     typeof value.baseBranch !== "string" ||
     !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value.baseBranch) ||
@@ -86,10 +99,10 @@ export const REPOSITORY = CONFIG.repository;
 export const REMOTE_URL = `https://github.com/${REPOSITORY}.git`;
 export const BASE_BRANCH = CONFIG.baseBranch;
 export const ISSUE_PREFIX = CONFIG.issuePrefix;
-export const LOCAL_CI_COMMAND = CONFIG.localCiCommand;
 export const ISSUE_PATTERN = new RegExp(`^${ISSUE_PREFIX}-([1-9]\\d*)$`);
+// Preserve existing families on legacy branches; new branches use corch/.
 export const BRANCH_PATTERN = new RegExp(
-  `^codex/${ISSUE_PREFIX.toLowerCase()}-([1-9]\\d*)-[a-z0-9]+(?:-[a-z0-9]+)*$`,
+  `^(?:corch|codex)/${ISSUE_PREFIX.toLowerCase()}-([1-9]\\d*)-[a-z0-9]+(?:-[a-z0-9]+)*$`,
 );
 export function issueFromBranch(branch) {
   const match = BRANCH_PATTERN.exec(branch ?? "");
@@ -97,6 +110,3 @@ export function issueFromBranch(branch) {
 }
 export const escapeRegExp = (value) =>
   value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-export const CI_RUN_PATTERN = new RegExp(
-  `^https://github\\.com/${escapeRegExp(REPOSITORY)}/actions/runs/[1-9]\\d*$`,
-);

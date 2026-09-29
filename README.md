@@ -1,246 +1,227 @@
 # Corch
 
-Workflow reutilizável de desenvolvimento com IA para o Codex: instruções de
-agentes, skills por função, preparação de worktrees, planejamento, implementação,
-revisão, testes e entrega com evidências.
+Workflow reutilizável de desenvolvimento com IA para o Codex. Mudanças pontuais
+elegíveis são entregues na conversa atual. O ciclo coordenado usa Refinement,
+Coordinator, Planner e Worker, com Reviewer e Tester selecionados conforme o risco.
+Três helpers cuidam da preparação, do estado e da execução de comandos.
 
-Mudanças pequenas podem ser feitas diretamente na conversa atual. Entregas que
-precisam de coordenação usam um contexto local e conversas por função. A demanda
-pode vir da própria conversa, de um documento ou de ferramentas como GitHub
-Issues, Linear e Jira. Nenhum gerenciador de tickets é obrigatório.
-O usuário discute o plano com o Planner; após a aprovação, o Worker continua no
-mesmo checkout. Reviewer e Tester usam esse checkout em sequência, com controle
-de acesso para impedir alterações concorrentes.
+O Worker decide quais revisões e testes independentes são necessários desde a
+primeira passagem e após correções. As funções consideram o comportamento
+alterado e as evidências; os scripts preservam identidade, concorrência e execução segura.
+
+O [router](.agents/skills/corch-development-workflow/SKILL.md) define a
+elegibilidade da entrega direta: resultado localizado e verificável com padrões
+conhecidos, sem necessidade de coordenação, família ativa ou risco material.
+Quando esses critérios são atendidos, não é preciso pedir um modo especial,
+criar item no backlog ou abrir outras conversas. A validação é focada e preserva
+exigências explícitas do usuário e do projeto. Trabalho fora desses critérios
+segue o ciclo coordenado, salvo instrução direta do usuário.
+
+## Ciclo de entrega
+
+1. **Refinement** consulta o backlog do provedor scrum externo, verifica duplicatas
+   e cria ou atualiza o item com resultado, critérios de aceitação e dependências.
+   Conversas e documentos podem iniciar a solicitação; o item refinado fica no provedor.
+2. **Coordinator** verifica o item, suas dependências e responsabilidades, registra os metadados e
+   prepara o checkout compartilhado do Planner e do Worker.
+3. **Planner** resolve o desenho com o usuário e salva o plano Markdown. A aprovação
+   desse plano é preservada na continuação do Worker.
+4. **Worker** implementa, valida o candidato e seleciona os checks independentes
+   necessários, conforme sua skill. Quando ambos são selecionados, **Reviewer**
+   revisa antes de **Tester** verificar o comportamento, no mesmo checkout.
+5. Após correções, o Worker escolhe as novas passagens necessárias e explica como
+   resolveu os achados. Um commit novo não obriga a repetir todas as funções.
+6. A PR normalmente é criada na prontidão local. Um rascunho pode ser aberto antes
+   quando libera uma validação necessária, como CI exclusiva de PR, preview ou
+   ambiente de integração. Se um push da branch já oferece essa validação, basta
+   usá-lo. A abertura do rascunho usa a autorização existente e não declara
+   prontidão: validações exigidas, inclusive CI do commit atual, precisam estar
+   concluídas ou explicitamente dispensadas. Falhas observadas exigem correção
+   demonstrada ou revisão do alvo pelo usuário antes da entrega para revisão humana.
+   O Worker vincula a PR ao item scrum e mantém as transições autorizadas do projeto.
+
+O provedor scrum mantém o backlog, a prioridade e o ciclo de vida dos itens.
+O registro local mantém o contexto acordado e o estado de execução; decisões
+diretas do usuário prevalecem sobre conteúdo anterior do provedor. Refinement
+verifica as alterações gravadas antes de entregar o item ao Coordinator.
+Sem acesso ao provedor, o refinamento fica pendente com um bloqueio concreto;
+um rascunho local não o substitui nem altera a elegibilidade da entrega direta.
+Uma indisponibilidade não desfaz a autorização de uma implementação já em
+andamento; a sincronização pendente deve ser informada.
+
+Revisão e testes podem funcionar sem PR; checks que dependem de um preview ou
+ambiente de integração usam o destino verificado para o commit atribuído.
+Quando selecionado, o Tester escolhe, inspeciona, sanitiza e publica evidências
+adequadas à aceitação, sem cotas de screenshots ou logs. Sem Tester, o Worker
+preserva suas evidências de validação e identifica sua autoria. Um rascunho de PR
+já pode receber evidências autorizadas. Se o destino ainda não existir, os
+artefatos são salvos primeiro e publicados depois, sem repetir testes.
+Uma falha de upload exige recuperação da publicação; não muda o resultado técnico.
+Sem destino externo, links locais bastam. Fontes externas não autorizam publicação
+automaticamente. Instruções e dispensas explícitas do usuário continuam válidas.
 
 ## Conteúdo
 
 | Caminho | Responsabilidade |
 | --- | --- |
-| `AGENTS.md` | Instruções gerais para o projeto |
-| `.agents/skills/corch-*` | Router, Coordinator, Refinement, Planner, Worker, Reviewer, Tester e adaptador Jira |
-| `.agents/skills/corch-development-workflow/scripts` | Nove helpers executáveis: oito centrais e preflight opcional |
-| `.agents/skills/corch-development-workflow/scripts/lib` | Nove módulos internos, sem comandos executáveis |
-| `.agents/skills/corch-development-workflow/references` | Contratos do workflow atual |
-| `.codex/hooks.json` | Contexto de sessão e preparação do Planner |
-| `.codex/environments/environment.toml` | Preparação do checkout pelo ambiente local |
-| `.agents/workflow.json` | Configuração específica do projeto |
-| `tests/` | Suíte de desenvolvimento do Corch, separada das skills |
+| `AGENTS.md` | Instruções gerais do projeto |
+| `.agents/skills/corch-*` | Skills das funções e adaptador para projetos que usam Jira |
+| `.agents/skills/corch-development-workflow/scripts/prepare-worker-worktree.mjs` | Preparação verificada do checkout e dependências |
+| `.agents/skills/corch-development-workflow/scripts/task-state.mjs` | Estado atômico, identidades, referências, leases e deduplicação |
+| `.agents/skills/corch-development-workflow/scripts/run-bounded-check.mjs` | Comandos com logs limitados e sanitizados e limpeza em interrupções |
+| `.agents/skills/corch-development-workflow/scripts/lib/` | Configuração, runtime, validações mecânicas e execução compartilhada |
+| `.agents/skills/corch-development-workflow/references/contracts.md` | Campos do registro, comandos e resultado comum |
+| `.agents/workflow.json` | Configuração do projeto adotante |
+| `.codex/environments/environment.toml` | Preparação do ambiente local do Codex |
+| `tests/` | Testes do toolkit; não são dependências de execução dos helpers |
 
-As skills usam `.agents/skills/`, o caminho de descoberta documentado para
-[skills locais](https://learn.chatgpt.com/docs/build-skills). A configuração
-`workflow.json` e os diretórios de estado em `.agents/` são convenções do Corch.
-Os [hooks](https://learn.chatgpt.com/docs/hooks) e o
-[ambiente local](https://learn.chatgpt.com/docs/environments/local-environment)
-permanecem em `.codex/` para serem reconhecidos pelo Codex.
+Os novos trabalhos coordenados vinculam o item externo em `workItem.scrum` no
+registro `.agents/task-state/TASK-N.json`, preservando a entrada original em `sourceRef`.
+O identificador interno pode diferir do identificador do provedor. Usam o plano
+`TASK-N-plan.md` e resultados Markdown em `.agents/evidence/`. O Worker mantém o
+handoff legível em `TASK-N-handoff.md`. Esses arquivos são locais e ignorados pelo
+Git. Não há geradores de prompts, relatórios, packets de bootstrap ou amendments.
+O Corch não registra hooks globais.
+
+Branches de trabalho coordenado usam `corch/<chave>-<slug>`; a entrega direta
+pode usar `corch/<slug>` sem criar uma chave de item. A pasta
+`.codex/environments/` mantém o nome exigido pela integração de ambientes locais
+do Codex; links `codex://` também preservam o protocolo do aplicativo.
 
 ## Validar esta cópia
 
 Requisitos: Node.js 22 ou superior, npm e Git.
 
+Os helpers são escritos em Node.js e podem ser chamados pelo Bash, PowerShell
+ou outro shell do projeto. Bash e PowerShell não são requisitos do Corch.
+As diferenças de execução e limpeza de processos por sistema operacional ficam
+no adaptador de comandos. A [orientação de portabilidade](.agents/skills/corch-development-workflow/references/contracts.md#portable-command-execution)
+define como manter helpers, setup e exemplos independentes do shell.
+
 ```sh
 npm ci --ignore-scripts
-npm test
+npm run verify:ci
 ```
 
-Os testes usam repositórios e dados sintéticos temporários. Depois da instalação,
-a suíte principal não precisa de credenciais ou acesso ao Jira/GitHub. O arquivo
-de CI configura a suíte em Windows e Linux, com Node.js 22 e 24.
+Os testes usam dados e repositórios sintéticos temporários, sem credenciais de
+Jira/GitHub. Cobrem operações concorrentes, identidade de checkout, recuperação,
+runtime, referências seguras, comandos e instalação copiada. A validação de
+instruções não substitui a observação de uma entrega real com as ferramentas do
+Codex. Execute a suíte nos sistemas operacionais utilizados pelo projeto.
 
-## Usar em outro projeto
+## Adotar em outro projeto
 
-1. Copie `.agents/` e combine `AGENTS.md` com as instruções existentes. Para a
-   integração com o Codex, combine também os arquivos de `.codex/`. Preserve
-   configurações locais ao combinar arquivos. Não copie o `package.json` sobre o
-   do projeto: incorpore apenas os scripts e dependências de teste desejados.
-2. Ajuste `.agents/workflow.json`: `repository` no formato `owner/repo`,
-   `baseBranch`, `issuePrefix` e `localCiCommand`.
-   `example/project` e `TASK` são exemplos; a origem da demanda fica em cada tarefa. O remote de
-   entrega é derivado como `https://github.com/<repository>.git`.
-3. Configure `setup.steps` com os comandos necessários ao projeto. A lista vazia
-   é válida e não instala pacotes nem gera código.
-4. Adicione ao `.gitignore` as entradas para `.agents/task-context/`,
-   `.agents/task-state/` e `.agents/evidence/`. Confira os hooks antes de habilitá-los
-   no Codex. O início de sessão é somente leitura; o hook do Planner e o ambiente
-   local podem executar os passos de preparação configurados.
-5. Para implementação com PR, conecte GitHub e disponibilize as ferramentas
-   de conversas/worktrees do Codex desktop. Configure modelos e esforço em
-   `workflow.json.runtimes`, conforme o ambiente. As skills mantêm os termos
-   dos contratos em inglês.
+1. Copie as skills de `.agents/skills/`, a configuração `.agents/workflow.json`
+   e combine `AGENTS.md` com as regras do projeto. Para o Codex desktop, combine
+   também `.codex/environments/environment.toml`. Preserve a configuração local.
+2. Ajuste `repository` (`owner/repo`), `baseBranch`, `issuePrefix`, `localCiCommand`,
+   `scrum.provider`, `scrum.projectUrl`, os passos de `setup` e, se necessário,
+   `runtimes`. `example/project`, `TASK` e
+   `main` são exemplos; não publique no destino distribuído como exemplo.
+3. Ignore `.agents/task-state/` e `.agents/evidence/`. Não copie planos, logs,
+   evidências, credenciais ou o estado de outro projeto. Mantenha a exclusão de
+   `.agents/task-context/` se houver material histórico dessa versão anterior.
+4. Os helpers usam somente Node.js e Git; não copie nosso `package.json` por cima
+   do projeto nem instale dependências do toolkit para executá-los. As ferramentas
+   de chats/worktrees e de publicação são usadas pelas skills, fora dos scripts.
+5. Inicie com `$corch-development-workflow`, ou com a skill da função já atribuída.
+   Use o ciclo existente para continuar um trabalho aprovado, sem reiniciar intake.
 
-`TASK-N`, `codex/task-n-<slug>`, `main` e `npm run verify:ci` nas instruções são
-exemplos que seguem a configuração. A variável `CORCH_CONFIG` permite carregar
-um arquivo alternativo; os passos de setup usam a configuração do checkout em
-preparação. Credenciais devem permanecer fora de arquivos versionados.
+`scrum` seleciona o provedor e o projeto do backlog. Por exemplo:
 
-Cada passo de setup declara `name`, `command`, `args`, `inputs` e `outputs`.
-Exemplo para um projeto npm com lockfile:
+```json
+{
+  "scrum": {
+    "provider": "jira",
+    "projectUrl": "https://tracker.example.test/projects/PROJ"
+  }
+}
+```
+
+O endereço acima é sintético. Os valores `null` da distribuição exigem resolver
+o provedor/projeto selecionado pelo usuário antes de concluir Refinement; não
+ativam um modo local. Use ferramentas conectadas ou o adaptador apropriado,
+como `corch-jira-api` para Jira. Descubra campos, tipos, transições e relações
+nativas no projeto selecionado. Credenciais ficam no ambiente de execução.
+Configurar o destino não autoriza operações externas por si só.
+O contrato compartilhado define as responsabilidades de cada função no provedor.
+
+`CORCH_CONFIG` seleciona uma configuração alternativa. Fora disso, os helpers
+encontram a configuração junto à instalação, independentemente do diretório do
+comando. A preparação de dependências lê a configuração do checkout de destino.
+Comandos de estado precisam apontar para o checkout da família; não copie um
+estado antigo do checkout principal sobre decisões locais mais recentes.
+
+Cada passo de setup declara executável, argumentos separados, entradas e saídas
+relativas ao repositório. Exemplo para um projeto npm:
 
 ```json
 {
   "setup": {
-    "steps": [
-      {
-        "name": "install",
-        "command": "npm",
-        "args": ["ci"],
-        "inputs": ["package.json", "package-lock.json"],
-        "outputs": ["node_modules"]
-      }
-    ]
+    "steps": [{
+      "name": "install",
+      "command": "npm",
+      "args": ["ci"],
+      "inputs": ["package.json", "package-lock.json"],
+      "outputs": ["node_modules"]
+    }]
   }
 }
 ```
 
-Os comandos rodam na raiz do checkout, com argumentos separados e caminhos
-relativos ao repositório. O cache considera comandos, entradas, saídas e passos
-anteriores; uma falha não marca o passo como concluído. No Windows, os argumentos
-de `npm`, `pnpm` e `corepack`, tanto no setup quanto em `run-bounded-check.mjs`,
-ficam restritos a letras ASCII, números e `@ . _ / : -`. Isso permite scripts
-como `npm run verify:ci` e rejeita espaços, aspas, operadores e expansões do
-shell nos argumentos. O diretório do checkout pode conter espaços. Para
-argumentos complexos, use um script Node executado com `node`.
+Uma lista vazia é válida. O cache considera comandos, entradas, saídas e passos
+anteriores; falhas não marcam sucesso. Saídas ausentes e caminhos que escapam do
+checkout impedem prontidão. A preparação explícita e a do ambiente compartilham
+o lock/cache para evitar instalações concorrentes.
 
-As mutações de `task-state.mjs` usam um lock exclusivo por arquivo de estado,
-como `.agents/task-state/TASK-42.json.lock`, durante a leitura, validação e
-gravação. Comandos concorrentes aguardam até cinco segundos; `show` continua
-disponível sem adquirir o lock. O lock temporário registra PID e token do dono
-e é distinto da lease de Reviewer/Tester gravada no JSON.
+No Windows, argumentos de `npm`, `pnpm` e `corepack` aceitam letras ASCII, números
+e `@ . _ / : -`, incluindo nomes como `verify:ci`. Espaços, aspas, operadores e
+expansões de shell nesses argumentos são rejeitados. O caminho do checkout pode
+conter espaços. Para argumentos complexos, use um arquivo executado com `node`.
+Os checks têm prazo padrão de 180 segundos; `--timeout-ms` permite um prazo
+adequado à suíte. Interrupção ou timeout encerra a árvore de processos iniciada
+pelo comando, sem encerrar processos de outras tarefas.
 
-Se houver timeout, aguarde o comando dono terminar e tente novamente. Um lock
-abandonado ou com dono não verificável nunca é removido automaticamente. Antes
-de remover apenas o arquivo `.json.lock` indicado no erro, confira o PID e
-confirme que nenhum comando `task-state.mjs` está escrevendo nesse estado.
-Se não conseguir confirmar, preserve o lock. Não remova o JSON nem limpe a lease
-do gate para resolver esse problema.
+## Runtime e recuperação
 
-## Runtimes e gates
+`runtimes` aceita pares `model`/`reasoningEffort` para Planner, Tester e
+classificações do Worker. Reviewer também aceita `"worker"`. As rotas gravadas
+são snapshots; editar a configuração não troca o modelo de um Worker em execução.
+Os padrões continuam em `lib/runtime-policy.mjs`. O Codex valida disponibilidade;
+uma rejeição precisa de correção explícita, sem substituição silenciosa.
 
-`runtimes` é opcional. `planner`, `tester` e cada classificação de `worker`
-aceitam pares completos `model`/`reasoningEffort`. `reviewer` também aceita
-`"worker"`, usando a rota gravada do Worker no momento da criação da conversa.
-Exemplo de overrides parciais, sem alterar as outras classificações:
+As escritas de estado usam um lock `.json.lock` com PID/token. Leitura por `show`
+continua disponível. Escritores concorrentes aguardam até cinco segundos; um lock
+abandonado ou não verificável nunca é roubado automaticamente. Antes de remover
+somente esse lock, confirme que seu dono não está escrevendo. Não remova o JSON
+nem limpe a lease do Reviewer/Tester para resolver o lock de escrita.
 
-```json
-{
-  "runtimes": {
-    "planner": { "model": "gpt-6-astra", "reasoningEffort": "xhigh" },
-    "worker": { "complex": { "model": "gpt-5.6-sol", "reasoningEffort": "high" } },
-    "reviewer": "worker",
-    "tester": { "model": "gpt-6-luna", "reasoningEffort": "xhigh" }
-  }
-}
-```
+O Worker só libera a lease depois de confirmar o término da função. Resultados
+ambíguos de criar/enviar exigem inspeção do chat/evento antes de repetir, evitando
+famílias e mensagens duplicadas. Nenhum resultado anterior vira aprovação de um
+novo commit automaticamente.
 
-Sem overrides: Planner usa Astra/xhigh; Worker bounded/routine usa Luna/xhigh,
-standard/complex usa Luna/max, high-risk usa GPT-5.6 Sol/high e exceptional usa
-GPT-5.6 Sol/xhigh; Reviewer acompanha o Worker e Tester usa Luna/xhigh.
-Os nomes completos dos modelos ficam em `lib/runtime-policy.mjs`. A validação local
-confere a estrutura; o Codex valida disponibilidade e combinações de esforço.
-Se rejeitar um runtime, corrija a configuração explicitamente, sem fallback.
-Rotas já gravadas são snapshots: editar a configuração não as modifica nem invalida.
+## Atualizar uma instalação
 
-Grave a rota inicial uma vez com `task-state.mjs record-route`, informando
-`--issue`, `--classification`, `--rationale` e os sinais relevantes em `--signal`.
-Depois execute `prepare-worker-bootstrap.mjs --role planner --coordinator <id>`
-com a identidade do bootstrap em stdin, sem montar `executionRoute` manualmente.
-O helper lê o estado salvo em `--worktree` (por padrão, o diretório atual) e retorna
-o objeto completo `bootstrap`, além do prompt e runtime. Salve esse objeto em
-`.agents/task-state/TASK-N-bootstrap-input.json` antes de criar o Planner.
-A preparação não grava arquivos; não é necessário um arquivo separado de rota.
-O mesmo helper lê a rota salva para continuar o Worker após a aprovação do plano.
+Não substitua helpers e skills sob famílias em execução. Termine ou interrompa
+intencionalmente o trabalho antes da atualização. Preserve históricos, checkouts,
+identidades, snapshots de runtime, planos aprovados e eventos de entrega.
+Branches existentes com prefixo `codex/` continuam aceitas; novas famílias usam
+`corch/`, sem exigir renomear branches anteriores.
 
-O Worker pode pedir escalada com evidência e encerrar o turno. O Coordinator
-aguarda o término, confirma ausência de lease e executa `escalate-route` no checkout
-do Worker com `--expected-revision`, `--classification`, `--signal` e `--rationale`.
-A ordem é bounded/routine → standard/complex → high-risk → exceptional, sem redução
-automática. O estado preserva revisões anteriores; rotas antigas começam na revisão 1.
-O helper de continuação lê a rota atual e fornece o evento `worker-route:N` para
-deduplicação. Após envio ambíguo, confira a conversa antes de reenviar. Continuam
-válidos a aprovação, o checkout, o progresso e as validações concluídas.
+Em uma família inativa e sem lease, leia seu contexto/bootstrap anterior e grave
+os campos correspondentes com `record-context` e `record-delivery`, começando
+pela revisão 0 quando o campo ainda não existir. Confira `show` no checkout
+correto. As referências antigas de plano e resultados JSON continuam legíveis;
+os arquivos históricos não precisam ser apagados ou convertidos. A partir daí,
+use o registro único e os resultados Markdown para novas passagens.
+Resolva e registre o item scrum real antes de um novo despacho, preservando
+planos e aprovações existentes. Configurações e registros antigos sem `scrum`
+continuam legíveis; sua ausência não representa refinamento externo concluído.
 
-Reviewer e Tester novos começam por `create_thread`, com histórico novo, no
-projeto salvo correspondente e ambiente local. `gate.mjs dispatch` gera
-os argumentos completos; seu contrato de entrada está no registro de contratos.
-O Worker para de usar o checkout antes da criação. O primeiro comando do gate é
-`claim-gate`, com seu ID validado pelo hook SessionStart e o caminho absoluto do
-checkout do Worker. Esse comando registra a conversa e adquire a lease sob o
-mesmo lock; uma falha não deixa registro parcial. Ausência de ID impede inspeção.
-O diretório inicial da conversa pode ser o checkout principal: comandos, leituras,
-estado e evidências sempre apontam explicitamente para o checkout do Worker.
-Não há outro worktree, setup ou subagentes. Reviewer termina antes do Tester;
-correções reutilizam cada conversa e seu modelo. Famílias já registradas continuam
-válidas. O Worker só libera a lease depois de confirmar o término do gate.
-
-## Fluxo de uso
-
-Para uma alteração localizada, use `$corch-development-workflow`. Para trabalho
-coordenado, use `$corch-refinement` para organizar a demanda e
-`$corch-delivery-coordinator` para iniciar o item escolhido. O Coordinator prepara
-a família, o Planner produz o plano e o Worker implementa e seleciona os gates
-proporcionais ao risco.
-
-Preflight é obrigatório somente quando o item selecionado ou sua vizinhança conhecida
-contém relações hard ou de coordenação. Sem essas relações, o Coordinator também
-dispensa o helper e o pacote. Permanecem as verificações de prontidão, conclusão,
-capacidade, famílias ativas e responsabilidade. Quando houver dependências, preserve
-a verificação dos vínculos, os bloqueios por milestone e os limites de concorrência.
-Entrega direta continua sem pacotes de tarefa.
-
-## Helpers e módulos internos
-
-Há 18 arquivos `.mjs`: nove executáveis na raiz de `scripts/` e nove módulos em
-`scripts/lib/`. Os oito helpers centrais são `workflow-hook.mjs`,
-`prepare-worker-worktree.mjs`, `materialize-task-context.mjs`, `task-state.mjs`,
-`run-bounded-check.mjs`, `prepare-worker-bootstrap.mjs`, `prepare-report.mjs` e
-`gate.mjs`. O nono, `assess-delivery-preflight.mjs`, só se aplica às relações acima.
-
-Os módulos internos são `lib/workflow-config.mjs`, `lib/runtime-policy.mjs`,
-`lib/task-source.mjs`, `lib/validation.mjs`, `lib/bootstrap.mjs`,
-`lib/delivery-state.mjs`, `lib/task-context.mjs`, `lib/gate-contracts.mjs` e
-`lib/report.mjs`. Cada consumidor importa o responsável pela função; não há fachada.
-
-`gate.mjs` reúne `selection`, `assess`, `compose` e `dispatch`; todos oferecem
-`--help`. Assessment e composição usam `--gate review|test`. Na correção normal,
-envie `delta: {impact, rationale, acceptanceFocus?, priorFindingIds?}` ao dispatch.
-Ele calcula a topologia Git e incorpora a avaliação no pacote existente, sem criar
-um documento intermediário. Uma avaliação completa fornecida é conferida contra
-o Git. Use `assess` separadamente apenas para decidir sobre uma nova tentativa;
-`compose` combina resultado-base e amendment e recusa sobrescrever uma saída.
-
-As skills preservam decisões e autorizações explícitas do usuário. A aprovação
-do plano de entrega identifica o destino e as ações externas incluídas. Merge,
-produção e operações destrutivas precisam de autorização própria. O adaptador
-REST Jira é opcional e só se aplica quando essa ferramenta for escolhida.
-Publicar em qualquer serviço externo exige autorização para aquele destino.
-
-## Entradas e entrega local
-
-Cada demanda recebe uma chave interna estável, como `TASK-42`. Ela não precisa
-ser o identificador de um ticket. No contexto normalizado, `issue.sourceRef`
-registra a origem e pode ser:
-
-- `null` para uma solicitação nesta conversa;
-- uma URL HTTPS de GitHub Issues, Linear, Jira ou outro serviço;
-- um caminho relativo, como `docs/proposta.md` ou `README.md`;
-- uma referência `codex://threads/<id>` a outra conversa autorizada.
-
-Não é necessário inventar URL, ID externo, tipo ou status para uma solicitação
-local. O escopo, os critérios de aceitação e as decisões do usuário ficam no
-contexto da tarefa. Dependências podem ser registradas e verificadas nesse
-contexto, sem criar links em um tracker.
-
-`prepare-report.mjs` valida o resultado e seus artefatos uma vez e retorna
-`commentBody`, `marker`, `files` e `prComment` na mesma chamada. Use
-`prComment.marker` e `prComment.body` para o resumo textual de uma PR autorizada.
-O handoff final exige esse relatório; `gate.mjs selection` é apenas feedback
-antecipado opcional, sem uma segunda validação obrigatória.
-Review/test exigem `--profile`; handoff usa o perfil da seleção e rejeita divergências.
-Evidência declarada inválida impede as duas saídas. A conversa e os arquivos
-ignorados de evidência bastam para a revisão. O script não grava arquivos nem
-publica nada. Uma origem externa não é automaticamente um destino autorizado
-de publicação. `--evidence-url` é opcional; use-o apenas quando existir evidência
-publicada e verificada. Status externos também são opcionais e seguem as
-capacidades da ferramenta escolhida.
-
-Estado de tarefas, planos, logs, evidências, arquivos de ambiente e histórico de
-outros repositórios não fazem parte do conteúdo distribuído.
+Remova os helpers aposentados ao copiar esta versão: `gate.mjs`,
+`prepare-report.mjs`, `prepare-worker-bootstrap.mjs`,
+`materialize-task-context.mjs`, `assess-delivery-preflight.mjs` e seus módulos
+internos antigos. Preserve apenas as skills/arquivos da distribuição atual e os
+dados locais. Se existirem hooks de versões antigas, remova somente os comandos
+do Corch, preservando hooks de outras ferramentas. Não há motor legado paralelo.

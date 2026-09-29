@@ -14,13 +14,12 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
-import { buildDeliveryTaskDispatch, createExecutionRoute } from "../.agents/skills/corch-development-workflow/scripts/lib/bootstrap.mjs";
+import { createExecutionRoute } from "../.agents/skills/corch-development-workflow/scripts/lib/runtime-policy.mjs";
+import { workItem, delivery } from "./helpers.mjs";
+import { runCommand as runSetupCommand } from "../.agents/skills/corch-development-workflow/scripts/lib/command-execution.mjs";
 import {
-  plannerLaunchFromPrompt,
   prepareWorktree,
-  runSetupCommand,
 } from "../.agents/skills/corch-development-workflow/scripts/prepare-worker-worktree.mjs";
-import { userPromptSubmit } from "../.agents/skills/corch-development-workflow/scripts/workflow-hook.mjs";
 
 const scripts = fileURLToPath(
   new URL(
@@ -93,59 +92,24 @@ async function fixture(action) {
     git(primary, "commit", "-m", "fixture");
     const create = (number) => {
       const issue = `TASK-${number}`;
-      const branch = `codex/task-${number}-fixture`;
+      const branch = `corch/task-${number}-fixture`;
       const cwd = path.join(root, issue);
       git(primary, "branch", branch);
       git(primary, "worktree", "add", "--detach", cwd, branch);
-      const input = {
-        schemaVersion: "worker-bootstrap/v2",
-        issue: { key: issue, summary: "Bootstrap fixture", sourceRef: null },
-        reservedBranch: branch,
-        taskContextPath: `.agents/task-context/${issue}.md`,
-        executionRoute: createExecutionRoute({
-          issueKey: issue,
-          classification: "bounded",
-          riskSignals: [],
-          rationale: "A bounded fixture.",
-        }),
-        deliveryTarget: {
-          repository: "example/project",
-          remoteUrl: "https://github.com/example/project.git",
-          baseBranch: "main",
-          headBranch: branch,
-          push: true,
-          draftPullRequest: true,
-          readyForHumanReview: true,
-          sourceRef: null,
-        },
-      };
-      write(
-        path.join(primary, `.agents/task-state/${issue}-bootstrap-input.json`),
-        input,
-      );
-      write(path.join(primary, `.agents/task-state/${issue}.json`), {
-        schemaVersion: "task-state/v2",
-        workflowProtocol: "delivery-v3",
-        issueKey: issue,
-        tasks: {},
-        gates: {},
-        deliveredEvents: {},
+      const input = { delivery: delivery(issue) };
+      write(path.join(primary, ".agents/task-state/" + issue + ".json"), {
+        schemaVersion: "task-state/v2", workflowProtocol: "delivery-v3", issueKey: issue,
+        tasks: {}, gates: {}, deliveredEvents: {},
+        workItem: { revision: 1, ...workItem() }, delivery: { revision: 1, ...input.delivery },
+        executionRoute: createExecutionRoute({ issueKey: issue, classification: "bounded", rationale: "A bounded fixture." }),
       });
-      write(
-        path.join(primary, input.taskContextPath),
-        `<!-- corch-task-context:v3 issue=${issue} -->\n# ${issue}\nScoped fixture.\n`,
-      );
-      const prompt = buildDeliveryTaskDispatch(input, {
-        coordinator: "coordinator-fixture",
-      }).prompt;
       return {
         cwd,
         issue,
         branch,
         input,
-        prompt,
-        launch: plannerLaunchFromPrompt(prompt),
-        sessionId: `planner-${number}`,
+        issueKey: issue,
+        threadId: `planner-${number}`,
       };
     };
     const calls = [];
@@ -173,38 +137,7 @@ async function fixture(action) {
   }
 }
 
-test("read-only Planner preparation emits a strict packet accepted by the startup hook", () =>
-  fixture(async ({ primary, create, execute, calls }) => {
-    const task = create(101);
-    command(primary, process.execPath, [path.join(scripts, "task-state.mjs"),
-      "record-route", "--issue", task.issue, "--classification", "bounded",
-      "--rationale", "A bounded fixture."]);
-    const statePath = path.join(primary, `.agents/task-state/${task.issue}.json`);
-    const inputPath = path.join(primary, `.agents/task-state/${task.issue}-bootstrap-input.json`);
-    const stateBefore = readFileSync(statePath, "utf8");
-    const inputBefore = readFileSync(inputPath, "utf8");
-    const { executionRoute, ...identity } = task.input;
-    const prepared = JSON.parse(command(task.cwd, process.execPath,
-      [path.join(scripts, "prepare-worker-bootstrap.mjs"), "--role", "planner",
-        "--coordinator", "coordinator-fixture", "--worktree", primary],
-      { input: JSON.stringify(identity) }));
-    assert.deepEqual(prepared.bootstrap, task.input);
-    assert.equal(readFileSync(statePath, "utf8"), stateBefore);
-    assert.equal(readFileSync(inputPath, "utf8"), inputBefore);
-    assert.equal(existsSync(path.join(task.cwd, `.agents/task-state/${task.issue}.json`)), false);
-    write(inputPath, prepared.bootstrap);
-    const result = await userPromptSubmit({
-      cwd: task.cwd, session_id: task.sessionId, prompt: prepared.prompt,
-    }, { execute });
-    assert.match(result.hookSpecificOutput.additionalContext, /bootstrap ready/);
-    assert.equal(git(task.cwd, "branch", "--show-current"), task.branch);
-    const state = JSON.parse(readFileSync(path.join(task.cwd, `.agents/task-state/${task.issue}.json`)));
-    assert.equal(state.tasks.planner.threadId, task.sessionId);
-    assert.deepEqual(state.executionRoute, executionRoute);
-    assert.equal(calls.length, 2);
-  }));
-
-test("detached simultaneous starts attach different branches and hydrate/register before model execution", () =>
+test("explicit simultaneous preparation attaches different branches and registers one task record before planning", () =>
   fixture(async ({ create, execute, calls }) => {
     const tasks = [create(70), create(93)];
     assert.equal(
@@ -213,47 +146,25 @@ test("detached simultaneous starts attach different branches and hydrate/registe
     );
     assert.equal(git(tasks[0].cwd, "branch", "--show-current"), "");
     const results = await Promise.all(
-      tasks.map((task) =>
-        userPromptSubmit(
-          { cwd: task.cwd, session_id: task.sessionId, prompt: task.prompt },
-          { execute },
-        ),
-      ),
+      tasks.map((task) => prepareWorktree({ ...task, execute })),
     );
     for (const [index, task] of tasks.entries()) {
-      assert.match(
-        results[index].hookSpecificOutput.additionalContext,
-        /bootstrap ready/,
-      );
+      assert.equal(results[index].status, "ready");
       assert.equal(git(task.cwd, "branch", "--show-current"), task.branch);
       const state = JSON.parse(
         readFileSync(
           path.join(task.cwd, `.agents/task-state/${task.issue}.json`),
         ),
       );
-      assert.equal(state.tasks.planner.threadId, task.sessionId);
+      assert.equal(state.tasks.planner.threadId, task.threadId);
       assert.equal(state.tasks.planner.kind, "task");
-      assert.match(
-        readFileSync(path.join(task.cwd, task.input.taskContextPath), "utf8"),
-        new RegExp(task.issue),
-      );
+      assert.deepEqual(state.workItem.acceptance, workItem().acceptance);
       const planPath = path.join(
         task.cwd,
         `.agents/task-state/${task.issue}-plan.md`,
       );
       write(planPath, "Existing approved plan");
       await prepareWorktree({ ...task, execute });
-      const workerPrompt = buildDeliveryTaskDispatch(task.input, {
-        role: "worker",
-        planRevision: 1,
-      }).prompt;
-      assert.deepEqual(
-        await userPromptSubmit(
-          { cwd: task.cwd, session_id: "worker", prompt: workerPrompt },
-          { execute },
-        ),
-        {},
-      );
       assert.equal(readFileSync(planPath, "utf8"), "Existing approved plan");
     }
     assert.equal(
@@ -263,7 +174,24 @@ test("detached simultaneous starts attach different branches and hydrate/registe
     );
   }));
 
-test("same-worktree environment and prompt setup serialize and reuse dependencies", () =>
+test("repreparation preserves newer local context over a stale primary record", () =>
+  fixture(async ({ primary, create, execute }) => {
+    const task = create(90);
+    await prepareWorktree({ ...task, execute });
+    const localPath = path.join(task.cwd, `.agents/task-state/${task.issue}.json`);
+    const local = JSON.parse(readFileSync(localPath));
+    local.workItem.revision = 2;
+    local.workItem.userDecisions = ["Keep the newer local target"];
+    write(localPath, local);
+    const primaryPath = path.join(primary, `.agents/task-state/${task.issue}.json`);
+    const shared = JSON.parse(readFileSync(primaryPath));
+    shared.workItem.outcome = "Stale primary target";
+    write(primaryPath, shared);
+    await prepareWorktree({ ...task, execute });
+    assert.deepEqual(JSON.parse(readFileSync(localPath)), local);
+  }));
+
+test("same-worktree environment and explicit setup serialize and reuse dependencies", () =>
   fixture(async ({ create, execute, calls }) => {
     const task = create(71);
     await Promise.all([
@@ -282,53 +210,57 @@ test("same-worktree environment and prompt setup serialize and reuse dependencie
     );
   }));
 
-test("prompt matching handles delegation/CRLF and ignores ordinary or old task prompts", () =>
-  fixture(async ({ create }) => {
+test("Planner CLI requires explicit identity and checkout and reuses environment setup", () =>
+  fixture(async ({ primary, create, execute, calls }) => {
     const task = create(72);
-    assert.deepEqual(
-      plannerLaunchFromPrompt(
-        `<codex_delegation>\n<source_thread_id>parent</source_thread_id>\n<input>${task.prompt.replaceAll("\n", "\r\n")}</input>\n</codex_delegation>`,
-      ),
-      task.launch,
-    );
-    assert.equal(
-      plannerLaunchFromPrompt(
-        task.prompt.replace(`Corch bootstrap: ${task.issue}\n`, ""),
-      ),
-      undefined,
-    );
-    assert.deepEqual(
-      await userPromptSubmit({ prompt: "Continue planning" }),
-      {},
-    );
+    const script = path.join(scripts, "prepare-worker-worktree.mjs");
+    const args = ["--issue", task.issue, "--thread", task.threadId, "--worktree", task.cwd];
+    for (const invalid of [
+      args.slice(0, 2), args.slice(0, 4), args.slice(2),
+      [...args.slice(0, 5), "relative"], [...args, "--issue", task.issue],
+      ["--unknown", "value"], [...args, "constructor", "value"],
+      [...args.slice(0, 3), "bad\nidentity", ...args.slice(4)],
+    ]) {
+      const result = spawnSync(process.execPath, [script, ...invalid], { cwd: primary, encoding: "utf8", windowsHide: true });
+      assert.equal(result.status, 1, result.stdout);
+      assert.equal(result.stdout, "");
+    }
+    assert.equal(existsSync(path.join(task.cwd, ".agents/task-state")), false);
+    await prepareWorktree({ cwd: task.cwd, execute });
+    const ready = JSON.parse(command(primary, process.execPath, [script, ...args]));
+    assert.equal(ready.status, "ready");
+    assert.deepEqual(ready.executedSteps, []);
+    assert.equal(calls.length, 2);
+    assert.equal(git(task.cwd, "branch", "--show-current"), task.branch);
+    const statePath = path.join(task.cwd, `.agents/task-state/${task.issue}.json`);
+    const stateBefore = readFileSync(statePath, "utf8");
+    assert.equal(JSON.parse(stateBefore).tasks.planner.threadId, task.threadId);
+    assert.equal(JSON.parse(command(primary, process.execPath, [script, ...args])).status, "ready");
+    assert.equal(readFileSync(statePath, "utf8"), stateBefore);
   }));
 
-test("hydration and install failures block startup, release lock, and do not claim ready", () =>
+test("missing context and install failures block startup, release lock, and do not claim ready", () =>
   fixture(async ({ primary, create, execute, calls }) => {
     const task = create(73);
-    const event = {
-      cwd: task.cwd,
-      session_id: task.sessionId,
-      prompt: task.prompt,
-    };
-    rmSync(path.join(primary, task.input.taskContextPath));
-    const missing = await userPromptSubmit(event, { execute });
-    assert.equal(missing.decision, "block");
-    assert.match(missing.reason, /Context hydration failed/);
+    const statePath = path.join(primary, ".agents/task-state/" + task.issue + ".json");
+    const saved = JSON.parse(readFileSync(statePath));
+    const missing = structuredClone(saved);
+    delete missing.workItem;
+    write(statePath, missing);
+    await assert.rejects(prepareWorktree({ ...task, execute }), /requires task context/);
     assert.equal(calls.length, 0);
-    write(
-      path.join(primary, task.input.taskContextPath),
-      `<!-- corch-task-context:v3 issue=${task.issue} -->\nrestored`,
-    );
-    const failed = await userPromptSubmit(event, {
+    write(statePath, saved);
+    await assert.rejects(prepareWorktree({ ...task,
       execute: async () => ({
         status: 1,
         stderr: "Authorization: Bearer fixture-secret-value",
         stdout: "",
       }),
+    }), (error) => {
+      assert.match(error.message, /Setup step install failed/);
+      assert.doesNotMatch(error.message, /fixture-secret-value/);
+      return true;
     });
-    assert.equal(failed.decision, "block");
-    assert.doesNotMatch(failed.reason, /fixture-secret-value/);
     assert.equal(
       existsSync(
         path.join(task.cwd, ".agents/task-state/worktree-bootstrap.lock"),
@@ -341,6 +273,7 @@ test("hydration and install failures block startup, release lock, and do not cla
       ),
       false,
     );
+    assert.equal(JSON.parse(readFileSync(path.join(task.cwd, `.agents/task-state/${task.issue}.json`))).tasks.planner.threadId, task.threadId);
     assert.equal((await prepareWorktree({ ...task, execute })).status, "ready");
   }));
 
@@ -392,44 +325,22 @@ test("dirty detached, wrong head, claimed branch and duplicate Planner never res
     const duplicate = create(78);
     await prepareWorktree({ ...duplicate, execute });
     await assert.rejects(
-      prepareWorktree({ ...duplicate, sessionId: "other-planner", execute }),
+      prepareWorktree({ ...duplicate, threadId: "other-planner", execute }),
       /another active Planner/,
     );
   }));
 
-test("mismatched or unsupported staged state blocks; SessionStart remains read-only", () =>
+test("mismatched or unsupported staged identity blocks explicit preparation", () =>
   fixture(async ({ primary, create, execute, calls }) => {
     const task = create(79);
-    await assert.rejects(
-      prepareWorktree({
-        ...task,
-        launch: { ...task.launch, branch: "codex/task-79-other" },
-        execute,
-      }),
-      /Launch identity/,
-    );
-    const stateDir = path.join(task.cwd, ".agents/task-state");
-    rmSync(stateDir, { recursive: true });
-    const session = JSON.parse(
-      command(
-        task.cwd,
-        process.execPath,
-        [path.join(scripts, "workflow-hook.mjs"), "session-start"],
-        { input: JSON.stringify({ cwd: task.cwd }) },
-      ),
-    );
-    assert.match(
-      session.hookSpecificOutput.additionalContext,
-      /read-only session context/,
-    );
-    assert.equal(existsSync(stateDir), false);
-    write(path.join(primary, `.agents/task-state/${task.issue}.json`), {
-      schemaVersion: "task-state/v1",
-    });
-    await assert.rejects(
-      prepareWorktree({ ...task, execute }),
-      /staged delivery-v3 state/,
-    );
+    const statePath = path.join(primary, ".agents/task-state/" + task.issue + ".json");
+    const saved = JSON.parse(readFileSync(statePath));
+    saved.delivery.headBranch = "corch/task-179-fixture";
+    write(statePath, saved);
+    await assert.rejects(prepareWorktree({ ...task, execute }), /delivery identity/);
+    assert.equal(git(task.cwd, "branch", "--show-current"), "");
+    write(statePath, { schemaVersion: "task-state/v1" });
+    await assert.rejects(prepareWorktree({ ...task, execute }), /schema or issue identity/);
     assert.equal(calls.length, 0);
   }));
 
@@ -492,7 +403,7 @@ test("wrong repository and invalid registration block before dependency executio
       "remote",
       "set-url",
       "origin",
-      task.input.deliveryTarget.remoteUrl,
+      task.input.delivery.remoteUrl,
     );
     const statePath = path.join(
       primary,
@@ -503,7 +414,7 @@ test("wrong repository and invalid registration block before dependency executio
     write(statePath, state);
     await assert.rejects(
       prepareWorktree({ ...task, execute }),
-      /Planner registration failed/,
+      /task-state is incomplete/,
     );
     assert.equal(calls.length, 0);
   }));
@@ -522,7 +433,7 @@ test("interruption stops command and releases the setup lock for a later retry",
     };
     await assert.rejects(
       prepareWorktree({ ...task, execute: interrupted }),
-      /Bootstrap interrupted/,
+      /Command interrupted/,
     );
     assert.equal(
       existsSync(
@@ -542,7 +453,7 @@ test("timed-out setup kills its child process tree", async () => {
     ],
     { timeoutMs: 800 },
   );
-  assert.equal(result.status, 1);
+  assert.ok(result.status !== 0 || result.error);
   assert.match(result.stderr, /timed out/);
   const pids = result.stdout.trim().split(/\s+/).map(Number);
   assert.equal(pids.length, 2);

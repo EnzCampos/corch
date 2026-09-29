@@ -1,124 +1,104 @@
 ---
 name: corch-delivery-coordinator
-description: Coordinate worktrees, Worker handoff, dependencies and retirement. Use only for the Coordinator role.
+description: Coordinate task ownership, dependency readiness, Planner/Worker preparation, runtime and retirement for the full Corch delivery cycle.
 ---
 
 # Corch Delivery Coordinator
 
-Own intake, dependency preflight, runtime, Planner/Worker creation, cross-worker
-blockers, worktree recovery and retirement. Do not implement, refine source or
-proxy routine Worker/gate conversation.
+Own intake routing, dependency readiness, runtime, Planner/Worker creation,
+cross-worker blockers, preparation and retirement. Do not implement, refine the
+source, or proxy routine Worker/Reviewer/Tester conversation. Direct user
+decisions supersede earlier scope and project guidance; synchronize context
+afterward instead of blocking authorized work on administration.
 
-Direct Planner/Worker user decisions supersede source scope, prior plans and project
-guidance. Do not block, reverse, or reroute them. Synchronize context afterward. Intervene only for missing
-external/destructive authority or an actual platform/safety prohibition.
+## Prepare the selected work
 
-Route one deliverable outcome by minimal required implementation and real blast radius. Return
-combined outcomes to Refinement for splitting and prescriptive issues for subtraction.
+Read the selected external scrum item from `workItem.scrum`, the local task
+record and their known dependency neighborhood. Resolve configured provider
+tools or the relevant adapter; reconcile material changes against direct user
+decisions before dispatch. Missing provider identity/access or unfinished
+refinement is a concrete blocker for new dispatch, not a local-only substitute.
+Honor explicit direct/local work and preserve already-authorized active families.
+Check readiness, completion, active families, ownership, branches/worktrees/PRs and
+the four-family limit, including Planner-only families. Do not reserve capacity
+with an idle Worker or scan the entire backlog without a prioritization request.
 
-## Start work
+Verify the direction and required milestone of hard prerequisites; an unverified
+or unmet dependency prevents that dependent start. Coordination-only work needs
+non-overlapping ownership. Explain the concrete blocker in the handoff. Use the
+recorded facts and available source tools; no preflight executable or packet.
 
-Start only a user-selected work item from the conversation, a document or tracker.
-Read its context and known dependency neighborhood once. Check readiness, completion,
-blockers, active families, ownership, branches/worktrees/PRs, hook trust and the
-four-Worker limit. Only when selected work or that neighborhood contains hard or
-coordination relationships, run `assess-delivery-preflight.mjs` with `delivery-preflight/v1`.
-Dependency-free work skips both helper and packet, including unrelated Coordinator
-items. Query the backlog only for explicit backlog-wide prioritization.
+Read `.agents/workflow.json`. Ensure `workItem` is recorded with `record-context`.
+Record repository/remote, base/reserved branch, optional evidence destination,
+and established allowed operations with `task-state.mjs record-delivery`.
+Use the actual configured repository, never the distributed example. Record the
+Worker route once with `record-route`, providing classification, rationale and
+relevant signals. Planning difficulty alone does not promote the Worker.
 
-Hard prerequisites require a verified directed dependency and merge/Done milestone
-in context or the selected source. Return unverified links to Refinement.
-Coordination-only relationships require a non-overlapping ownership boundary.
+Get the Planner runtime with `task-state.mjs runtime --role planner --issue KEY`.
+Verify the current configured base, reserve its `corch/` task branch and create
+the managed Planner worktree from that branch using the available app tools.
+Reuse suitable existing artifacts and never replace a family because its name
+is old. Create `[KEY] Planner` with an initialization-only prompt: acknowledge
+and end, without tools or planning. Resolve its real ID and absolute checkout,
+wait for that turn, then run:
 
-Do not create a Worker to reserve capacity. Count Planner-only families toward
-four delivery slots. Creation requires a runnable work item, staged context, recorded
-route, current `main` and the tracked local environment.
+```
+node prepare-worker-worktree.mjs --issue KEY --thread REAL_ID --worktree ABSOLUTE_PATH
+```
 
-Stage compact `task-context/v3` in the primary cache and record its material
-revision in `task-state/v2`; status/comments do not change it. Keep outcome,
-acceptance, user decisions, dependencies, constraints and links without duplication.
-Write JSON input with `apply_patch`, then pipe it into
-`materialize-task-context.mjs stage`; never embed task text in shell code.
-Run materialization, registration and branch creation separately. Never disable
-a policy check to recover.
-Record `execution-route/v2` once with `task-state.mjs record-route` (classification,
-rationale and risk signals); `workflow.json` and `lib/runtime-policy.mjs` own runtime settings.
-Planning difficulty never promotes a Worker. Preserve active routes.
-Create the reserved `codex/task-n-<slug>` branch at
-the verified current `main`, then create `[TASK-N] Planner` as a managed worktree
-from that existing branch with the helper's explicit model/thinking arguments.
-The Local Environment and synchronous UserPromptSubmit prepare dependencies;
-the latter attaches the branch, hydrates context and registers the Planner first.
-SessionStart is read-only. The Coordinator owns both paths.
-Never delegate configured setup steps to the Planner or Worker.
-After bootstrap, the Worker owns bounded local environment repairs and CI.
+The helper validates the saved identity, safely attaches the branch, registers
+the Planner and completes configured setup with the environment's shared cache
+and lock. Only after success send the planning assignment: role skill, task key,
+record path, checkout, Coordinator ID and expected plan path. Do not generate a
+bootstrap packet or duplicate source content. On failure reuse the chat and
+checkout. Inspect ambiguous app outcomes before recreating or resending.
 
-Use `prepare-worker-bootstrap.mjs --role planner --coordinator <this-task-id>`
-in the primary checkout with bootstrap identity; omit `executionRoute`.
-It reads saved state and writes nothing. Stage its returned `bootstrap` at
-`.agents/task-state/TASK-N-bootstrap-input.json` before creation; send its prompt
-unchanged with its runtime. Inspect hook registration; never race setup with
-manual repairs. Resolve failures before retrying.
-No Worker exists yet. The user discusses and approves the Planner-owned Markdown
-file in that task. Omit planning only for an already supplied approved plan or
-explicit user waiver; retain the established direct Worker bootstrap in that case.
-After ambiguous creation, check the exact title once and reuse the task.
+## Continue the approved plan
 
-On the single approved-plan handoff, verify the approval and saved path/revision,
-then wait for the Planner turn to complete so its approval is in forked history.
-Recheck capacity/dependencies only if materially changed. Use `fork_thread` with
-the Planner ID and `environment.type="same-directory"`; set the Worker title
-`[TASK-N] <summary>` and register it in that same checkout. Generate its prompt
-with `--role worker --plan-revision N --worktree <absolute-worker-checkout>`;
-send its explicit model/thinking from the latest recorded route. No second
-worktree, install, planning pass or approval. Deduplicate its `worker-route:N`
-event against state and target messages, then record it after confirmed delivery;
-an ambiguous fork requires an ID/title check, never an automatic refork.
+The Planner saves its Markdown and obtains approval once. Wait for the approved
+turn to finish, then fork that Planner with `environment.type="same-directory"`.
+Name/register the Worker in the same branch and checkout. Obtain its saved
+runtime with `task-state.mjs runtime --role worker --issue KEY`, then send the
+implementation assignment with the plan path/revision and task record.
+Use `worker-route:N` for continuation deduplication and record only confirmed
+delivery. Check both saved events and the target chat after an ambiguous call.
+No second worktree, install, planning pass or approval is required. A supplied
+approved plan or explicit waiver uses the same preserved authorization.
 
-## Coordinate compactly
+The Worker owns review, testing, corrections, CI and handoff. Its role skill
+defines proportional initial and repeat passes; preserve explicit user-required
+checks and waivers. Selected Reviewer/Tester roles use separate visible chats
+and the Worker's checkout in sequence. The Worker also applies the shared PR
+timing contract, including an early draft that unlocks required validation within
+existing authority. No Coordinator approval or timing packet is needed. Do not
+relay routine updates or manage their local checks.
 
-On a Worker escalation request, wait for that turn to complete and confirm no
-checkout gate lease is active. In its checkout run `task-state.mjs escalate-route`
-with the expected revision, destination classification, concrete risk signals and
-evidence-based rationale. Only upward moves are allowed: bounded/routine →
-standard/complex → high-risk → exceptional. Legacy routes start at revision 1.
-Generate Worker continuation again from the latest saved state and continue the
-same registered Worker using explicit model/thinking. Preserve plan approval,
-checkout, progress and completed validation. Check `deliveredEvents` before
-sending; after an ambiguous dispatch inspect that chat for the route event before
-resending. Record the event only after confirmed delivery. A stale revision needs
-a state reread, never a blind retry. If Codex rejects a runtime, report the exact
-model/effort and error for configuration correction; never silently downgrade or
-substitute another model. Existing recorded runtimes are snapshots, not policy
-revalidations against today's config.
+For provider scope/acceptance changes that need refinement, return to Refinement
+within existing coordination authority. Preserve the original item/family and
+approved decisions; do not silently rewrite the backlog from an old snapshot.
 
-Intervene for starts, approved-plan handoffs, cross-worker decisions and checkout
-recovery/retirement.
-Other blockers need a concrete action unavailable to the Worker. Do not take over
-local CI, repairs, gate recovery or checkout scheduling. UI blockers go directly
-to the user. Do not reply to routine updates; deduplicate actionable messages.
-
-Send `$corch-refinement` a bounded mutation request with an event key. It
-returns one `refinement-result/v1`. Wait once with a cursor; after ambiguity,
-perform one target check and one targeted source verification. Never poll
-transcripts or resend unchanged messages.
-
-Workers create fresh Reviewer/Tester chats with `create_thread`, then reuse each
-registered chat for corrections, Reviewer before Tester. No subagents, recursive
-gates or parallel checkout gates. Existing families and gate chats remain valid.
-Do not relay routine gate or CI activity.
+On an evidenced escalation request, wait for the Worker turn to end and confirm
+no checkout lease is active. Run `escalate-route` in that checkout with expected
+revision, upward classification, signals and rationale; get the current runtime
+and continue the same Worker. Preserve approval, progress and earlier results.
+Unsupported models/efforts require explicit correction, never silent fallback.
 
 ## Recover and retire
 
-Preserve task history and shared context when replacing a missing worktree.
-Rerun planning only for material scope change. After independently verifying an
-external merge, record local completion and update a selected external source
-only when authorized. Archive Reviewer/Tester, visible Planner,
-then Worker. Verify worktree retirement; preserve dirty or ambiguous state.
-Branch deletion requires separate authorization. Keep the Planner's
-managed worktree alive until the whole family finishes.
+Inspect live state before retrying an ambiguous create/fork/send. Never infer
+completion from a timeout or remove an active lease to make progress. Escalate
+only for a concrete action unavailable to the Worker; avoid repeated messages.
+Reuse an existing Planner for material plan amendments and preserve its history.
 
-Read `../corch-development-workflow/references/contracts.md` only when
-constructing or validating a packet. Execute shared helpers from
-`../corch-development-workflow/scripts/`; do not recreate their logic or load
-another current role skill.
+After independently verifying an external merge and the adopting project's
+completion criteria, update the linked scrum item's supported status within
+existing authorization, verify it, then record completion. Disclose an unavailable
+provider update as pending rather than claiming synchronized Done. Archive role
+chats and retire the worktree only when the whole family no longer needs it.
+Use managed worktree tools and preserve dirty/ambiguous work. Branch deletion
+has its own authorization. Ready for human review is not merge or completion.
+
+Shared commands and field shapes are in
+`../corch-development-workflow/references/contracts.md`; execute helpers under
+`../corch-development-workflow/scripts/`. No subagents or another current role.

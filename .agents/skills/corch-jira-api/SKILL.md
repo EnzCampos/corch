@@ -5,15 +5,18 @@ description: Perform explicitly authorized Jira REST operations using project co
 
 # Jira API adapter
 
-Use this optional adapter only when Jira is the selected source or publication
-destination. Resolve its origin from the selected source reference or runtime
-`JIRA_BASE_URL`; obtain the project key from the selected issue or `JIRA_PROJECT_KEY`. Obtain account,
+Use this adapter when Jira is the selected external scrum provider or publication
+destination. It supplements the assigned role without taking over its decisions.
+Resolve its origin/project from `.agents/workflow.json.scrum`, `workItem.scrum`,
+the selected item, or runtime `JIRA_BASE_URL` / `JIRA_PROJECT_KEY`. Obtain account,
 token, cloud, and board identifiers from the user's configured secret provider or
 runtime environment. Never embed account emails, tokens, tenant IDs, or board IDs
 in the skill or a committed configuration.
 
-Prefer a connected Jira tool when available. This adapter does not authorize
-mutations or make Jira a prerequisite for the core workflow.
+Prefer a connected Jira tool when available. Normal Refinement requires an
+external scrum provider; Jira is one supported choice. This adapter does not
+authorize mutations. If selected Jira access is unavailable, report the blocker
+without silently substituting a local backlog.
 
 Before a write, resolve the exact issues and verify existing user authorization.
 Search narrowly for duplicates before creating issues. Use the site's supported

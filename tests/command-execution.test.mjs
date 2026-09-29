@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { run, runSetupCommand } from "../.agents/skills/corch-development-workflow/scripts/prepare-worker-worktree.mjs";
+import { run, runCommand as runSetupCommand } from "../.agents/skills/corch-development-workflow/scripts/lib/command-execution.mjs";
+import { fixture, write, command } from "./helpers.mjs";
 
 const boundedScript = fileURLToPath(new URL(
   "../.agents/skills/corch-development-workflow/scripts/run-bounded-check.mjs",
@@ -66,6 +67,18 @@ test("bounded npm checks support script names and checkout paths containing spac
   }
 });
 
+test("bounded logs preserve UTF-8 characters split across stdout and stderr chunks", () => fixture(({ root }) => {
+  const script = path.join(root, "utf8.cjs");
+  write(script, "const stream=process[process.argv[2]]; const output=Buffer.from('ação café\\n'); stream.write(output.subarray(0,2)); setTimeout(()=>stream.end(output.subarray(2)),80);");
+  for (const stream of ["stdout", "stderr"]) {
+    const result = command(root, process.execPath, [boundedScript, "--issue", "TASK-42", "--name", `utf8-${stream}`, "--", process.execPath, script, stream]);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const summary = JSON.parse(result.stdout);
+    assert.equal(summary.status, "PASS");
+    assert.equal(readFileSync(path.join(root, summary.logPath), "utf8"), "ação café\n");
+  }
+}));
+
 test("Windows package-manager arguments reject shell syntax before execution", {
   skip: process.platform !== "win32",
 }, () => {
@@ -78,3 +91,28 @@ test("Windows package-manager arguments reject shell syntax before execution", {
     }
   }
 });
+
+test("bounded timeout and interruption clean up their command tree and preserve unrelated processes", () => fixture(async ({ root }) => {
+  const unrelated = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], { stdio: "ignore", windowsHide: true });
+  const closed = new Promise((resolve) => unrelated.once("close", resolve));
+  const treeFile = path.join(root, "tree.cjs");
+  write(treeFile, "const {spawn}=require('node:child_process'); const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore',windowsHide:true}); require('node:fs').writeFileSync(process.argv[2],JSON.stringify([process.pid,child.pid])); setInterval(()=>{},1000);");
+  const launcher = path.join(root, "interrupt.mjs");
+  write(launcher, "import {existsSync} from 'node:fs'; import {pathToFileURL} from 'node:url'; const ready=process.argv[2]; process.argv=[process.execPath,...process.argv.slice(3)]; const timer=setInterval(()=>{if(existsSync(ready)){clearInterval(timer);process.emit('SIGTERM');}},20); try {await import(pathToFileURL(process.argv[1]));} finally {clearInterval(timer);}");
+  try {
+    for (const mode of ["timeout", "interrupt"]) {
+      const pidsFile = path.join(root, `${mode}.json`);
+      const args = [boundedScript, "--issue", "TASK-42", "--name", mode, "--timeout-ms", mode === "timeout" ? "1200" : "8000", "--", process.execPath, treeFile, pidsFile];
+      const result = command(root, process.execPath, mode === "timeout" ? args : [launcher, pidsFile, ...args]);
+      assert.notEqual(result.status, 0, result.stdout);
+      const summary = JSON.parse(result.stdout);
+      assert.equal(summary.status, "FAIL");
+      assert.match(summary.failureTail, mode === "timeout" ? /timed out/ : /interrupted/);
+      for (const pid of JSON.parse(readFileSync(pidsFile))) assert.throws(() => process.kill(pid, 0), /ESRCH/);
+      assert.doesNotThrow(() => process.kill(unrelated.pid, 0));
+    }
+  } finally {
+    unrelated.kill();
+    await closed;
+  }
+}));

@@ -12,8 +12,8 @@ import {
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-import { WorkflowValidationError, redactText } from "./lib/validation.mjs";
-import { run } from "./prepare-worker-worktree.mjs";
+import { WorkflowValidationError, redactText, containedPath } from "./lib/validation.mjs";
+import { runCommand } from "./lib/command-execution.mjs";
 
 const NAME_PATTERN = /^[a-z0-9][a-z0-9._-]{1,79}$/;
 const MAX_LOG_BYTES = 5 * 1024 * 1024;
@@ -23,7 +23,7 @@ function usage() {
   return `Run a validation command while keeping model-visible output bounded.
 
 Usage:
-  node run-bounded-check.mjs --issue TASK-N --name <label> -- <command> [args...]
+  node run-bounded-check.mjs --issue TASK-N --name <label> [--timeout-ms 180000] -- <command> [args...]
 
 Executables run directly; Windows package managers use validated simple tokens.
 Sanitized output is stored below the
@@ -35,12 +35,13 @@ function parseArguments(argv) {
   const separator = argv.indexOf("--");
   const options = separator < 0 ? argv : argv.slice(0, separator);
   const command = separator < 0 ? [] : argv.slice(separator + 1);
-  const args = { command };
+  const args = { command, timeoutMs: 180_000 };
   for (let index = 0; index < options.length; index += 1) {
     if (options[index] === "--help" || options[index] === "-h")
       args.help = true;
     else if (options[index] === "--issue") args.issueKey = options[++index];
     else if (options[index] === "--name") args.name = options[++index];
+    else if (options[index] === "--timeout-ms") args.timeoutMs = Number(options[++index]);
     else
       throw new WorkflowValidationError([
         `unknown argument: ${options[index]}`,
@@ -53,6 +54,7 @@ function parseArguments(argv) {
       ]);
     if (!NAME_PATTERN.test(args.name ?? ""))
       throw new WorkflowValidationError(["--name is invalid"]);
+    if (!Number.isSafeInteger(args.timeoutMs) || args.timeoutMs < 1) throw new Error("--timeout-ms must be positive");
     if (args.command.length === 0)
       throw new WorkflowValidationError(["a command is required after --"]);
   }
@@ -96,6 +98,7 @@ try {
       "logs",
       args.issueKey,
     );
+    containedPath(checkoutRoot, path.relative(checkoutRoot, logDirectory).replaceAll("\\", "/"));
     mkdirSync(logDirectory, { recursive: true });
     if (lstatSync(logDirectory).isSymbolicLink())
       throw new WorkflowValidationError([
@@ -106,12 +109,13 @@ try {
       throw new WorkflowValidationError(["log target must not be a symlink"]);
     }
     const started = Date.now();
-    const result = run(args.command[0], args.command.slice(1), {
+    const result = await runCommand(args.command[0], args.command.slice(1), {
       cwd: checkoutRoot,
       encoding: "utf8",
       shell: false,
       windowsHide: true,
-      maxBuffer: MAX_LOG_BYTES * 2,
+      maxOutput: MAX_LOG_BYTES * 2,
+      timeoutMs: args.timeoutMs,
     });
     const raw = `${result.stdout || ""}${result.stderr || ""}${result.error ? `\n${result.error.message}` : ""}`;
     const sanitized = redactText(raw).split(checkoutRoot).join("<repo>");
@@ -134,7 +138,7 @@ try {
       ...(passed ? {} : { failureTail: capped.slice(-FAILURE_TAIL_BYTES) }),
     };
     process.stdout.write(`${JSON.stringify(summary)}\n`);
-    if (!passed) process.exitCode = result.status || 1;
+    if (!passed) process.exitCode = result.status > 0 && result.status < 256 ? result.status : 1;
   }
 } catch (error) {
   const messages =
