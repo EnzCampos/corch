@@ -10,7 +10,8 @@ test("runtime defaults and partial overrides retain the selected model and effor
   assert.deepEqual(resolveRuntime({}, "planner"), { model: "gpt-6-astra", reasoningEffort: "xhigh" });
   assert.deepEqual(resolveRuntime({}, "worker", { classification: "routine" }), { model: "gpt-6-luna", reasoningEffort: "xhigh" });
   assert.deepEqual(resolveRuntime({}, "worker", { classification: "complex" }), { model: "gpt-6-luna", reasoningEffort: "max" });
-  assert.deepEqual(resolveRuntime({}, "worker", { classification: "high-risk" }), { model: "gpt-5.6-sol", reasoningEffort: "high" });
+  assert.deepEqual(resolveRuntime({}, "worker", { classification: "high-risk" }), { model: "gpt-6.1-sol", reasoningEffort: "high" });
+  assert.deepEqual(resolveRuntime({}, "worker", { classification: "exceptional" }), { model: "gpt-6.1-sol", reasoningEffort: "xhigh" });
   assert.deepEqual(resolveRuntime({}, "reviewer", { workerRoute }), workerRoute);
   assert.deepEqual(resolveRuntime({ runtimes: { tester: workerRoute } }, "tester"), workerRoute);
   for (const runtimes of [{ worker: { unknown: workerRoute } }, { reviewer: "other" }, { planner: { model: "partial" } }, { tester: { ...workerRoute, reasoningEffort: "invalid" } }]) assert.throws(() => validateRuntimeSettings(runtimes));

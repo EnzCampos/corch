@@ -5,6 +5,9 @@ description: Deliver eligible bounded Corch changes directly or route coordinate
 
 # Corch Delivery Router
 
+For Corch installation, configuration or repair requests, use `$corch-setup`
+directly. Changes to the toolkit's implementation still follow this router.
+
 Use the already assigned role's skill. An approved plan or existing family
 continues at its current role; do not restart intake or repeat approval.
 For new implementation requests, use direct delivery when the conditions below

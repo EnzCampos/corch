@@ -65,7 +65,7 @@ automaticamente. Instruções e dispensas explícitas do usuário continuam vál
 | Caminho | Responsabilidade |
 | --- | --- |
 | `AGENTS.md` | Instruções gerais do projeto |
-| `.agents/skills/corch-*` | Skills das funções e adaptador para projetos que usam Jira |
+| `.agents/skills/corch-*` | Skill de setup, funções de entrega e adaptador para projetos que usam Jira |
 | `.agents/skills/corch-development-workflow/scripts/prepare-worker-worktree.mjs` | Preparação verificada do checkout e dependências |
 | `.agents/skills/corch-development-workflow/scripts/task-state.mjs` | Estado atômico, identidades, referências, leases e deduplicação |
 | `.agents/skills/corch-development-workflow/scripts/run-bounded-check.mjs` | Comandos com logs limitados e sanitizados e limpeza em interrupções |
@@ -114,77 +114,29 @@ Codex. Execute a suíte nos sistemas operacionais utilizados pelo projeto.
 
 ## Adotar em outro projeto
 
-1. Copie as skills de `.agents/skills/`, a configuração `.agents/workflow.json`
-   e combine `AGENTS.md` com as regras do projeto. Para o Codex desktop, combine
-   também `.codex/environments/environment.toml`. Preserve a configuração local.
-2. Ajuste `repository` (`owner/repo`), `baseBranch`, `issuePrefix`, `localCiCommand`,
-   `scrum.provider`, `scrum.projectUrl`, os passos de `setup` e, se necessário,
-   `runtimes`. `example/project`, `TASK` e
-   `main` são exemplos; não publique no destino distribuído como exemplo.
-3. Ignore `.agents/task-state/` e `.agents/evidence/`. Não copie planos, logs,
-   evidências, credenciais ou o estado de outro projeto. Mantenha a exclusão de
-   `.agents/task-context/` se houver material histórico dessa versão anterior.
-4. Os helpers usam somente Node.js e Git; não copie nosso `package.json` por cima
-   do projeto nem instale dependências do toolkit para executá-los. As ferramentas
-   de chats/worktrees e de publicação são usadas pelas skills, fora dos scripts.
-5. Inicie com `$corch-development-workflow`, ou com a skill da função já atribuída.
-   Use o ciclo existente para continuar um trabalho aprovado, sem reiniciar intake.
+Use a skill [corch-setup](.agents/skills/corch-setup/SKILL.md) para instalar,
+configurar ou reparar o Corch. Ela inspeciona o projeto, preserva personalizações
+e trabalhos ativos, combina as instruções, apresenta os modelos e esforços de
+raciocínio recomendados por função e verifica a prontidão local. As escolhas usam
+a política de runtime existente e preservam as preferências do projeto.
 
-`scrum` seleciona o provedor e o projeto do backlog. Por exemplo:
+O destino ainda não precisa ter as skills. Em uma conversa aberta no checkout
+do Corch, indique a skill de origem e o repositório de destino, por exemplo
+(substitua os caminhos pelos seus):
 
-```json
-{
-  "scrum": {
-    "provider": "jira",
-    "projectUrl": "https://tracker.example.test/projects/PROJ"
-  }
-}
-```
+> Use a skill em `/caminho/corch/.agents/skills/corch-setup/SKILL.md` para instalar
+> e configurar o Corch no repositório `/caminho/meu-projeto`.
 
-O endereço acima é sintético. Os valores `null` da distribuição exigem resolver
-o provedor/projeto selecionado pelo usuário antes de concluir Refinement; não
-ativam um modo local. Use ferramentas conectadas ou o adaptador apropriado,
-como `corch-jira-api` para Jira. Descubra campos, tipos, transições e relações
-nativas no projeto selecionado. Credenciais ficam no ambiente de execução.
-Configurar o destino não autoriza operações externas por si só.
-O contrato compartilhado define as responsabilidades de cada função no provedor.
+Em uma instalação existente, invoque `$corch-setup` para completar a configuração
+ou reparar componentes compatíveis. Atualizações de versão ficam fora desse
+fluxo. Os campos, comandos e regras de preparação estão no
+[contrato de configuração e setup](.agents/skills/corch-development-workflow/references/contracts.md#project-configuration-and-setup).
 
-`CORCH_CONFIG` seleciona uma configuração alternativa. Fora disso, os helpers
-encontram a configuração junto à instalação, independentemente do diretório do
-comando. A preparação de dependências lê a configuração do checkout de destino.
-Comandos de estado precisam apontar para o checkout da família; não copie um
-estado antigo do checkout principal sobre decisões locais mais recentes.
-
-Cada passo de setup declara executável, argumentos separados, entradas e saídas
-relativas ao repositório. Exemplo para um projeto npm:
-
-```json
-{
-  "setup": {
-    "steps": [{
-      "name": "install",
-      "command": "npm",
-      "args": ["ci"],
-      "inputs": ["package.json", "package-lock.json"],
-      "outputs": ["node_modules"]
-    }]
-  }
-}
-```
-
-Uma lista vazia é válida. O cache considera comandos, entradas, saídas e passos
-anteriores; falhas não marcam sucesso. Saídas ausentes e caminhos que escapam do
-checkout impedem prontidão. A preparação explícita e a do ambiente compartilham
-o lock/cache para evitar instalações concorrentes.
-
-No Windows, os launchers Bash de `npm`, `pnpm` e `corepack` recebem argumentos
-literais, incluindo espaços, aspas e caracteres de shell. O adaptador não monta
-um comando CMD nem interpreta esses argumentos como código. A configuração de
-shell dos scripts do projeto continua pertencendo ao projeto/gerenciador.
-O caminho do checkout pode conter espaços.
-Os checks têm prazo padrão de 180 segundos; `--timeout-ms` permite um prazo
-adequado à suíte. Interrupção ou timeout encerra a árvore de processos iniciada
-pelo comando, sem encerrar processos de outras tarefas.
+O resultado informa alterações, checks executados e pendências de acesso ou
+preparação. Uma configuração local concluída não comprova acesso ao provedor
+scrum nem execução de checks omitidos. Depois, inicie com
+`$corch-development-workflow` ou continue pela função já atribuída, preservando
+planos e aprovações existentes.
 
 ## Runtime e recuperação
 

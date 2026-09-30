@@ -22,6 +22,10 @@ architecture, commands, product constraints, and canonical documentation.
 
 ## Delivery routing
 
+Use `$corch-setup` for installing, configuring or repairing Corch in a repository.
+Setup stays in the current chat and preserves active delivery ownership; version
+upgrades are outside its scope.
+
 Use `$corch-development-workflow` for implementation requests whose role is not
 assigned. A named role uses exactly its skill: `$corch-delivery-coordinator`,
 `$corch-refinement`, `$corch-planner`, `$corch-worker`, `$corch-reviewer`,

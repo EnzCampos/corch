@@ -4,8 +4,8 @@ export const DEFAULT_WORKER_RUNTIMES = Object.freeze({
   routine: { model: "gpt-6-luna", reasoningEffort: "xhigh" },
   standard: { model: "gpt-6-luna", reasoningEffort: "max" },
   complex: { model: "gpt-6-luna", reasoningEffort: "max" },
-  "high-risk": { model: "gpt-5.6-sol", reasoningEffort: "high" },
-  exceptional: { model: "gpt-5.6-sol", reasoningEffort: "xhigh" },
+  "high-risk": { model: "gpt-6.1-sol", reasoningEffort: "high" },
+  exceptional: { model: "gpt-6.1-sol", reasoningEffort: "xhigh" },
 });
 export const ROUTE_LEVELS = Object.freeze({
   bounded: 0, routine: 0, standard: 1, complex: 1, "high-risk": 2, exceptional: 3,

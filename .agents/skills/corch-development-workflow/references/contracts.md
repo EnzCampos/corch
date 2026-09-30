@@ -5,6 +5,69 @@ actual results without prescribing a generated prompt or a sequence of packets.
 Read `.agents/workflow.json` for repository, scrum provider, prefix, base, runtime and setup.
 `TASK-N` and branch examples below stand for those configured values.
 
+## Project configuration and setup
+
+`$corch-setup` owns installation and configuration in an adopting repository.
+The helpers require Node.js 22+ and Git, with no runtime npm dependencies. Do not
+copy the toolkit's package manifest or install its test dependencies in a target.
+
+`.agents/workflow.json` contains:
+
+| Field | Project setting |
+| --- | --- |
+| `repository` | GitHub `owner/repo`; current helpers derive `https://github.com/owner/repo.git`. Other hosts need a separate compatibility change. |
+| `baseBranch` | The project's actual delivery base branch. |
+| `issuePrefix` | Uppercase internal key prefix; it can differ from the scrum provider key. |
+| `scrum` | Provider/project selection described below; credentials stay at runtime. |
+| `localCiCommand` | The project's existing local validation command, not the toolkit's example. |
+| `setup.steps` | Ordered dependency preparation steps; an empty list is valid. |
+| `runtimes` | Optional overrides of the defaults described under Runtime and plan; preserve existing choices. |
+
+Distribution values such as `example/project`, `TASK`, `main` and
+`npm run verify:ci` are examples, not evidence of the target's settings.
+Validate with `readConfig(absoluteConfigPath)` exported by
+`scripts/lib/workflow-config.mjs`. This checks structure, not remote access or
+project readiness. The module also reads its default configuration on import;
+when importing from a different installation, set `CORCH_CONFIG` to the target
+configuration for that process and pass the target path explicitly.
+
+`CORCH_CONFIG` selects an alternate configuration. Otherwise helpers find the
+configuration beside their installation, independently of the command's working
+directory. Dependency preparation prefers the configuration in the target
+checkout. State commands must target the family's checkout; never replace its
+newer state with a primary-checkout copy.
+
+Each setup step declares a unique lowercase name, executable, separate literal
+arguments, and repository-relative inputs/outputs. Use forward slashes in those
+paths, without absolute paths or traversal. For example, for an npm project:
+
+```json
+{
+  "setup": {
+    "steps": [{
+      "name": "install",
+      "command": "npm",
+      "args": ["ci"],
+      "inputs": ["package.json", "package-lock.json"],
+      "outputs": ["node_modules"]
+    }]
+  }
+}
+```
+
+Choose actual commands and lifecycle-script policy from the adopting project.
+The cache includes commands, inputs, outputs and upstream steps. Failures do not
+mark success; missing outputs and escaping paths prevent readiness. Explicit
+preparation and Codex environment setup share the same lock/cache.
+
+The Codex environment invokes
+`node .agents/skills/corch-development-workflow/scripts/prepare-worker-worktree.mjs`.
+With no arguments it prepares dependencies in a linked checkout without creating
+a delivery identity. In the primary checkout it returns
+`skipped-primary-checkout`, which does not verify dependency preparation. Preserve
+existing environment commands and edit generated configuration through its owner.
+See Portable command execution for platform requirements and bounded execution.
+
 ## External scrum provider
 
 For coordinated delivery, the external scrum provider owns the backlog, priority,
@@ -203,7 +266,17 @@ on each supported operating system before claiming compatibility there.
 ## Runtime and plan
 
 `lib/runtime-policy.mjs` owns defaults and `.agents/workflow.json.runtimes` owns
-overrides. Worker routes retain `execution-route/v2` and their original model,
+overrides. Setup presents baseline and effective model/effort choices using
+`resolveRuntime(config, role, options)` from that module. Planner and Tester
+accept complete `model`/`reasoningEffort` pairs; Worker accepts such pairs keyed
+by classification. Reviewer accepts a pair or `"worker"` (also the default),
+which follows the saved Worker route. Tester resolves independently of project
+Worker overrides. Keep default choices implicit and save only project overrides.
+Refinement, Coordinator, setup and direct delivery use the current chat settings;
+adapters share their invoking role. They have no separate configuration fields.
+Host model/effort support must be checked separately from schema validation.
+
+Worker routes retain `execution-route/v2` and their original model,
 effort and revision history. Config edits affect new selections, not saved
 Worker snapshots. Reviewer normally follows the saved Worker runtime; role
 chats retain the runtime chosen at creation on subsequent passes.
