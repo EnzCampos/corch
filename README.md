@@ -120,6 +120,19 @@ e trabalhos ativos, combina as instruções, apresenta os modelos e esforços de
 raciocínio recomendados por função e verifica a prontidão local. As escolhas usam
 a política de runtime existente e preservam as preferências do projeto.
 
+Quando solicitado, o setup também provisiona quatro conversas persistentes:
+Work Delegator, Delivery Orchestrator (Coordinator), Refinement e Workflow
+Changer. Resolve os modelos/esforços, obtém a seleção exigida pelo aplicativo,
+reutiliza conversas verificadas e cria somente as ausentes no projeto local.
+As identidades ficam em `.agents/task-state/project-chats.json`, ignorado pelo
+Git no checkout principal. Isso não cria famílias, Planner/Worker ou permissões
+para enviar mensagens entre conversas. Reexecuções preservam trabalhos ativos.
+O encaminhamento vale para qualquer conversa do projeto: discutir uma ideia
+localmente não transfere a responsabilidade de Refinement para essa conversa.
+Quando o usuário pede para transformar a discussão em item de backlog, o router
+usa o chat registrado, respeitando autorização para mensagens e instruções
+explícitas para assumir a função ou executar o trabalho na conversa atual.
+
 O destino ainda não precisa ter as skills. Em uma conversa aberta no checkout
 do Corch, indique a skill de origem e o repositório de destino, por exemplo
 (substitua os caminhos pelos seus):
@@ -140,8 +153,11 @@ planos e aprovações existentes.
 
 ## Runtime e recuperação
 
-`runtimes` aceita pares `model`/`reasoningEffort` para Planner, Tester e
-classificações do Worker. Reviewer também aceita `"worker"`. As rotas gravadas
+`runtimes` aceita pares `model`/`reasoningEffort` para Planner, Tester,
+`delegator`, `coordinator`, `refinement`, `workflow` e classificações do Worker.
+Reviewer também aceita `"worker"`. Os quatro campos de conversas persistentes
+selecionam o runtime na criação; não alteram conversas existentes automaticamente.
+As rotas gravadas
 são snapshots; editar a configuração não troca o modelo de um Worker em execução.
 Os padrões continuam em `lib/runtime-policy.mjs`. O Codex valida disponibilidade;
 uma rejeição precisa de correção explícita, sem substituição silenciosa.

@@ -17,6 +17,30 @@ test("runtime defaults and partial overrides retain the selected model and effor
   for (const runtimes of [{ worker: { unknown: workerRoute } }, { reviewer: "other" }, { planner: { model: "partial" } }, { tester: { ...workerRoute, reasoningEffort: "invalid" } }]) assert.throws(() => validateRuntimeSettings(runtimes));
 });
 
+test("persistent project chat runtimes resolve without a delivery family and remain independent", () => {
+  const defaults = {
+    delegator: { model: "gpt-6-luna", reasoningEffort: "xhigh" },
+    coordinator: { model: "gpt-6.1-sol", reasoningEffort: "high" },
+    refinement: { model: "gpt-6-astra", reasoningEffort: "xhigh" },
+    workflow: { model: "gpt-6.1-sol", reasoningEffort: "xhigh" },
+  };
+  for (const [role, expected] of Object.entries(defaults)) {
+    assert.deepEqual(resolveRuntime({}, role), expected);
+    const override = { model: "project-model", reasoningEffort: "medium" };
+    const config = { runtimes: { [role]: override } };
+    assert.deepEqual(resolveRuntime(config, role), override);
+    for (const other of Object.keys(defaults).filter((entry) => entry !== role)) {
+      assert.deepEqual(resolveRuntime(config, other), defaults[other]);
+    }
+    assert.deepEqual(resolveRuntime(config, "planner"), resolveRuntime({}, "planner"));
+    assert.deepEqual(resolveRuntime(config, "tester"), resolveRuntime({}, "tester"));
+    for (const invalid of ["worker", { model: "partial" }, { ...override, reasoningEffort: "invalid" }]) {
+      assert.throws(() => validateRuntimeSettings({ [role]: invalid }));
+    }
+  }
+  assert.throws(() => validateRuntimeSettings({ orchestrator: defaults.coordinator }));
+});
+
 test("saved runtime snapshots survive configuration changes and explicit escalation is idempotent", () => fixture(({ root, configPath, state, invoke }) => {
   const args = ["--classification", "bounded", "--rationale", "Initial small change"];
   state("record-route", args);

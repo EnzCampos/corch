@@ -7,6 +7,12 @@ export const DEFAULT_WORKER_RUNTIMES = Object.freeze({
   "high-risk": { model: "gpt-6.1-sol", reasoningEffort: "high" },
   exceptional: { model: "gpt-6.1-sol", reasoningEffort: "xhigh" },
 });
+export const DEFAULT_PROJECT_CHAT_RUNTIMES = Object.freeze({
+  delegator: { model: "gpt-6-luna", reasoningEffort: "xhigh" },
+  coordinator: { model: "gpt-6.1-sol", reasoningEffort: "high" },
+  refinement: { model: "gpt-6-astra", reasoningEffort: "xhigh" },
+  workflow: { model: "gpt-6.1-sol", reasoningEffort: "xhigh" },
+});
 export const ROUTE_LEVELS = Object.freeze({
   bounded: 0, routine: 0, standard: 1, complex: 1, "high-risk": 2, exceptional: 3,
 });
@@ -24,10 +30,11 @@ export function validateRuntime(value, label = "runtime") {
 
 export function validateRuntimeSettings(settings) {
   if (settings === undefined) return;
-  if (!object(settings) || Object.keys(settings).some((key) => !["planner", "worker", "reviewer", "tester"].includes(key))) {
-    throw new Error("runtimes must contain only planner, worker, reviewer and tester settings");
+  if (!object(settings) || Object.keys(settings).some((key) =>
+    !["planner", "worker", "reviewer", "tester"].includes(key) && !Object.hasOwn(DEFAULT_PROJECT_CHAT_RUNTIMES, key))) {
+    throw new Error("runtimes must contain only planner, worker, reviewer, tester, delegator, coordinator, refinement and workflow settings");
   }
-  for (const role of ["planner", "reviewer", "tester"]) {
+  for (const role of ["planner", "reviewer", "tester", ...Object.keys(DEFAULT_PROJECT_CHAT_RUNTIMES)]) {
     if (settings[role] === undefined || (role === "reviewer" && settings[role] === "worker")) continue;
     validateRuntime(settings[role], `runtimes.${role}`);
   }
@@ -44,7 +51,9 @@ export function resolveRuntime(config, role, { classification, workerRoute } = {
   validateRuntimeSettings(config.runtimes);
   const settings = config.runtimes ?? {};
   let runtime;
-  if (role === "worker") {
+  if (Object.hasOwn(DEFAULT_PROJECT_CHAT_RUNTIMES, role)) {
+    runtime = settings[role] ?? DEFAULT_PROJECT_CHAT_RUNTIMES[role];
+  } else if (role === "worker") {
     if (!Object.hasOwn(DEFAULT_WORKER_RUNTIMES, classification)) throw new Error("classification is invalid");
     runtime = settings.worker?.[classification] ?? DEFAULT_WORKER_RUNTIMES[classification];
   } else if (role === "planner") {

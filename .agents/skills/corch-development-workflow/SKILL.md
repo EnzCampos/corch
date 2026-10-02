@@ -8,6 +8,7 @@ description: Deliver eligible bounded Corch changes directly or route coordinate
 For Corch installation, configuration or repair requests, use `$corch-setup`
 directly. Changes to the toolkit's implementation still follow this router.
 
+Apply project chat routing below before selecting a role for a new request.
 Use the already assigned role's skill. An approved plan or existing family
 continues at its current role; do not restart intake or repeat approval.
 For new implementation requests, use direct delivery when the conditions below
@@ -18,6 +19,42 @@ Role skills are `$corch-delivery-coordinator`, `$corch-refinement`,
 `$corch-planner`, `$corch-worker`, `$corch-reviewer`, and `$corch-tester`.
 Load exactly the applicable role. Keep mechanical helpers and shared data
 conventions in this skill's `scripts/` and `references/contracts.md`.
+
+## Project chat routing
+
+In a project with persistent role chats, this routing applies to every project
+chat, including ordinary exploration chats and Work Delegator. Discussion,
+research and previews can remain where they started. When the user asks to turn
+that discussion into backlog work (for example, "make that into a task"), send
+the request and agreed context to the project's Refinement chat. Creating/refining
+epics or issues, formalizing acceptance, and splitting backlog work belong there.
+Selected refined work requested for coordinated implementation goes to the
+Delivery Coordinator. Loading a peer's skill locally is not a handoff and does
+not assign this chat that role. A generic request to create a task is not an
+instruction to bypass the registered role chat.
+
+Continue locally when this chat is the verified destination, the human has
+explicitly assigned this chat that role or requested local execution, or an
+existing approved family already owns the work. Eligible direct implementation
+can also remain here under the rules below; a backlog-creation request is not
+direct implementation. Do not forward a role chat's own assignment back to itself
+or restart an existing family.
+
+Consult the primary checkout's `.agents/task-state/project-chats.json`, verify
+the live peer's project and responsibility, and reuse human authorization for
+that handoff. If the registry is missing or stale, discover existing project chats
+before assuming the role is absent. The [project chat contract](references/contracts.md#persistent-project-chats)
+defines discovery and messaging boundaries. If authorization is missing, ask
+specifically to send the request; if discovery or messaging fails, report that
+blocker instead of silently doing the peer's work. Neither case changes the role.
+If discovery confirms the project has no provisioned role chat, use the applicable
+skill locally under the ordinary workflow; do not create a chat without a request.
+
+Send the user's request, relevant decisions, source/item links and unresolved
+questions once. Preserve a handoff already in progress, inspect ambiguous send
+results before retrying, and confirm receipt with the app's wait/status tools.
+Report the actual destination and status. Do not start implementation merely
+because Refinement has received a backlog request.
 
 ## Direct delivery
 

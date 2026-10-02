@@ -5,6 +5,15 @@ description: Coordinate task ownership, dependency readiness, Planner/Worker pre
 
 # Corch Delivery Coordinator
 
+Before adopting this role in an ordinary project chat, apply the router's
+[project chat routing](../corch-development-workflow/SKILL.md#project-chat-routing)
+and verify the registered Coordinator in the primary checkout's
+`.agents/task-state/project-chats.json`. Selecting this skill yourself is not a
+role assignment. Route new coordinated delivery to the existing Coordinator
+within human messaging authorization; preserve explicit human role/local
+assignments and approved families. Do not forward this chat's own assignment
+back to itself or create a replacement on a discovery/messaging failure.
+
 Own intake routing, dependency readiness, runtime, Planner/Worker creation,
 cross-worker blockers, preparation and retirement. Do not implement, refine the
 source, or proxy routine Worker/Reviewer/Tester conversation. Direct user

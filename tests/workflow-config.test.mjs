@@ -30,6 +30,13 @@ test("scrum configuration preserves provider selection, accepts unresolved legac
   ]) assert.throws(() => validateConfig({ ...CONFIG, scrum }), /Invalid Corch configuration/);
 });
 
+test("project chat runtime choices round-trip through project configuration", () => {
+  const runtimes = Object.fromEntries(["delegator", "coordinator", "refinement", "workflow"].map((role) =>
+    [role, { model: "project-model", reasoningEffort: "high" }]));
+  assert.deepEqual(validateConfig({ ...CONFIG, runtimes }).runtimes, runtimes);
+  assert.throws(() => validateConfig({ ...CONFIG, runtimes: { refinement: { model: "partial" } } }), /complete model\/reasoningEffort pair/);
+});
+
 test("copied helpers run without toolkit packages using adjacent config or CORCH_CONFIG", () => fixture(({ root }) => {
   const installed = path.join(root, "installed");
   const copied = path.join(installed, ".agents/skills/corch-development-workflow/scripts");

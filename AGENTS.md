@@ -39,6 +39,15 @@ checks. Preserve assigned families, approvals, and active checkout ownership.
 Routing eligibility, shared helpers and data conventions belong to
 `corch-development-workflow`.
 
+Persistent project chats are registered in the primary checkout's ignored
+`.agents/task-state/project-chats.json`. In every project chat, including ordinary
+exploration chats, consult and verify the role destination when the user requests
+backlog work or coordinated delivery. "Make that into a task" routes to the
+registered Refinement chat; loading its skill locally is not a role assignment.
+Follow the router's Project chat routing rules, preserving explicit human
+role/local assignments, existing families and human messaging authorization.
+This registry is not an issue family and does not reserve delivery capacity.
+
 Read `.agents/workflow.json` before recording delivery identity. `TASK-N`,
 `corch/task-n-<slug>`, `main`, and `npm run verify:ci` in skill examples represent
 the configured prefix, branch convention, base branch, and CI command. Example

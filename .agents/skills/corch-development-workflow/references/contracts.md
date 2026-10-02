@@ -68,6 +68,57 @@ a delivery identity. In the primary checkout it returns
 existing environment commands and edit generated configuration through its owner.
 See Portable command execution for platform requirements and bounded execution.
 
+## Persistent project chats
+
+Setup can provision four project entry points: Work Delegator (`delegator`),
+Delivery Orchestrator/Coordinator (`coordinator`), Refinement (`refinement`) and
+Workflow Changer (`workflow`). They use local project chats, not worktrees or
+issue-family registration. `resolveRuntime(config, role)` resolves their desired
+model/effort without an issue record. Optional complete pairs in the corresponding
+`runtimes` fields override the policy defaults. Setup obtains explicit chat creation
+and model-selection authorization as required by the app tools.
+
+The primary checkout's ignored `.agents/task-state/project-chats.json` holds
+host-local identities, separate from `task-state/v2` issue files:
+
+```json
+{
+  "schemaVersion": "project-chats/v1",
+  "repository": "example/project",
+  "projectId": "actual-app-project-id",
+  "hostId": "actual-host-id",
+  "chats": {
+    "delegator": {
+      "threadId": "actual-chat-id",
+      "title": "Example Work Delegator",
+      "runtime": null
+    }
+  }
+}
+```
+
+Each of the four role entries has the same shape. Missing roles are pending,
+not permission to create a replacement without discovery. `runtime` is the
+observed `{ "model": "...", "reasoningEffort": "..." }` or null when unknown;
+desired values remain in the policy/configuration. Never put real chat IDs in
+tracked configuration or copy this registry from another project or host.
+Store it with normal file tools, re-reading and preserving other entries; setup
+serializes provisioning for a project. No new task-state command or family is
+needed. Do not feed this file to issue-state helpers or count it as a delivery.
+
+Before routing to a persistent peer, read this registry from the primary checkout
+and verify the live chat's project, host and responsibility. Adopt verified existing
+chats on a setup rerun; an unavailable tool or stale/unverified ID is a discovery
+gap, not evidence that the chat is absent. Creation failures with known IDs retain
+those identities for recovery. Messaging requires explicit human authorization;
+neither the registry nor another agent's message supplies it. An active chat's
+runtime is preserved until an explicitly authorized supported update occurs.
+The router's Project chat routing section owns the distinction between handing
+work to a peer and assuming its role locally. It applies to ordinary project chats
+as well as Work Delegator; a discussion becoming a backlog request uses the same
+destination. Setup installs that rule in project guidance, not just in the
+Delegator's initialization prompt.
+
 ## External scrum provider
 
 For coordinated delivery, the external scrum provider owns the backlog, priority,
@@ -268,12 +319,14 @@ on each supported operating system before claiming compatibility there.
 `lib/runtime-policy.mjs` owns defaults and `.agents/workflow.json.runtimes` owns
 overrides. Setup presents baseline and effective model/effort choices using
 `resolveRuntime(config, role, options)` from that module. Planner and Tester
-accept complete `model`/`reasoningEffort` pairs; Worker accepts such pairs keyed
+accept complete `model`/`reasoningEffort` pairs, as do persistent project roles
+`delegator`, `coordinator`, `refinement` and `workflow`; Worker accepts such pairs keyed
 by classification. Reviewer accepts a pair or `"worker"` (also the default),
 which follows the saved Worker route. Tester resolves independently of project
 Worker overrides. Keep default choices implicit and save only project overrides.
-Refinement, Coordinator, setup and direct delivery use the current chat settings;
-adapters share their invoking role. They have no separate configuration fields.
+Setup and direct delivery use their current chat settings; adapters share their
+invoking role. Project-chat settings select new chats, not the runtime of an
+existing Refinement, Coordinator or other persistent chat automatically.
 Host model/effort support must be checked separately from schema validation.
 
 Worker routes retain `execution-route/v2` and their original model,

@@ -1,6 +1,6 @@
 ---
 name: corch-setup
-description: Install, configure or repair Corch in an existing repository, establish recommended role models and reasoning efforts, and check delivery readiness while preserving customizations. Use for Corch setup, not product implementation or version upgrades.
+description: Install, configure or repair Corch, establish role runtimes, and provision requested persistent project chats while preserving existing work. Use for Corch setup, not product implementation or version upgrades.
 ---
 
 # Corch Setup
@@ -60,6 +60,12 @@ on repeat runs. Add missing ignores for `.agents/task-state/` and
 material. Do not alter tracked operational files silently if ignore rules expose
 an existing tracking problem.
 
+Include the router's project chat routing rule in the merged `AGENTS.md`: every
+project chat checks the registered role destination when discussion becomes
+backlog work or coordinated delivery. Do not scope this rule only to chats named
+Work Delegator. Keep research and eligible direct work local, preserve explicit
+human role/local assignments, and retain human messaging authorization boundaries.
+
 Create or complete `.agents/workflow.json` using the shared contract, not a blind
 copy of the source project's settings. Preserve valid target values and runtime
 overrides. Establish model/effort choices as described below. Use no dependency
@@ -81,9 +87,10 @@ Use the policy defaults as Corch's recommended baseline; do not keep another lis
 of model names in this skill. Resolve both baseline and effective choices with
 `resolveRuntime`, without recording a task or creating chats to discover them.
 
-Present a compact table covering Planner, every Worker classification, Reviewer
-and Tester. Show the recommended model and reasoning effort, the effective
-project choice, whether it is inherited or overridden, and availability on the
+Present a compact table covering the four persistent project chats below,
+Planner, every Worker classification, Reviewer and Tester. Show the recommended
+model and reasoning effort, the effective project choice, whether it is inherited
+or overridden, and availability on the
 delivery host. Explain the role/workload rationale: planning, implementation
 complexity/risk, review following the actual Worker, and acceptance testing.
 Group classifications only when both recommendation and effective choice match.
@@ -91,11 +98,13 @@ For Reviewer set to `worker`, show that relationship and explain that its pair
 comes from the saved Worker route, not a newly resolved default. Resolve Tester
 separately; a Worker override does not automatically change Tester.
 
-Also account for Refinement, Coordinator, setup and direct delivery: these use
-their current chat's model/effort and have no separate runtime fields. Recommend
-retaining the user's chat selection by default, identify it when observable,
-and mark it unknown otherwise. Adapters share the invoking role's runtime.
-Do not invent configuration keys or claim setup changes these chat settings.
+Persistent project chats resolve `delegator`, `coordinator`, `refinement` and
+`workflow` through the same policy. Explain the rationale: intake routing,
+delivery coordination, scope/acceptance design, and workflow maintenance.
+Setup itself and direct delivery retain their current chat settings; adapters
+share their invoking role. Existing chats keep their current settings unless
+the user explicitly requests a change. Mark unobservable settings unknown;
+a resolved configuration is a desired choice, not proof of a live chat's runtime.
 
 Check model/effort pairs against availability exposed by the destination's Codex
 tools or runtime information. Schema validation alone does not establish model
@@ -111,6 +120,64 @@ recommend supported adjustments and save the resulting choices in the existing
 or `reviewer: "worker"` for inheritance. Validate and resolve the saved settings
 again. Keep unchanged defaults implicit rather than pinning copied policy values.
 These choices affect future selections; preserve active chats and saved routes.
+
+## Provision persistent project chats
+
+When the user requests chat provisioning, create or reuse these four local chats
+in the adopting project. For a general installation without that request, present
+the four concrete titles and resolved model/effort pairs and ask whether to create
+them; local installation can finish independently. Obtain the user's model
+selection when the creation tool requires it; configuration alone is not human
+authorization to override the app default. If the user chooses the app defaults,
+omit model/effort arguments and report the effective pair as unknown unless exposed.
+
+| Chat title suffix | Runtime key | Responsibility |
+| --- | --- | --- |
+| Work Delegator | `delegator` | Intake and routing with `$corch-development-workflow`; send backlog requests to the actual Refinement chat and selected coordinated delivery to Coordinator. Do not switch roles locally. |
+| Delivery Orchestrator | `coordinator` | `$corch-delivery-coordinator`; ownership, readiness and the Planner/Worker lifecycle. “Delivery Coordinator” is the same role. |
+| Refinement | `refinement` | `$corch-refinement` using the configured external scrum provider. |
+| Workflow Changer | `workflow` | Corch process, skill and configuration maintenance; use `$corch-setup` for setup/repair and the router for requested toolkit changes. “Corch Workflow” is an existing-title equivalent. |
+
+Prefix new titles with the project's display name. Keep existing titles when
+reusing equivalent chats, including provider-specific Refinement names. These
+are persistent entry points, not issue-family roles; do not create Planner,
+Worker, Reviewer or Tester chats, reserve capacity, or invent an issue during setup.
+
+Use `list_projects` to resolve the target project/host and `list_threads` plus
+`read_thread` to inspect candidate chats. Read the primary checkout's ignored
+[project chat registry](../corch-development-workflow/references/contracts.md#persistent-project-chats)
+first. Verify saved IDs against live project, host, checkout and purpose; titles
+alone are insufficient. Adopt an unregistered matching chat. Ask only when
+multiple valid candidates cannot be disambiguated. If discovery is unavailable
+or an ID cannot be verified, report it pending rather than creating a duplicate.
+Preserve active chats and unrelated sidebar organization. Pin only if requested.
+
+Create only missing chats with `create_thread`, project target and
+`environment.type="local"`. For a user-selected runtime pass `model` and map
+`reasoningEffort` to `thinking`. Give each an initialization-only prompt: assigned
+responsibility, relevant skill, absolute repository/config/registry paths, and
+instructions to acknowledge and wait without starting backlog or implementation
+work. State that project chat routing also applies to ordinary project chats.
+For the Delegator, explicitly state that backlog requests require a handoff
+to the registered Refinement chat, not loading its skill locally. Include the
+registry path and any already verified peer IDs; do not invent IDs for chats not
+created yet. Preserve explicit user exceptions and messaging authorization as
+defined by the router. This is role initialization, not a prompt generator or a
+delivery assignment.
+Record each confirmed real ID immediately, then wait with `wait_threads` for the
+initialization to complete. Preserve a returned ID even when initialization fails;
+inspect and repair that chat instead of creating another. After an ambiguous create
+result, inspect live chats before retrying. Do not provision the same project
+concurrently from multiple setup chats.
+
+Re-read the registry before each atomic file replacement and preserve other roles. Save verified
+identities and observed runtime pairs there, with null for unknown runtime; do not
+write desired settings as observed facts. Newly initialized chats should consult
+this registry for their peers. Configuring chat identities does not authorize
+messages between them. Send peer handoffs or initialization messages to reused
+chats only within explicit human messaging authorization. To change a reused
+chat's runtime, require the user's explicit request and a supported app operation;
+do not interrupt active work or claim a config edit changed the running chat.
 
 ## Verify and hand off
 
@@ -145,8 +212,9 @@ preserving processes owned by the user or another task.
 
 Review the resulting diff for unrelated changes and duplicate guidance or setup
 commands. Report changed files, the effective role model/effort matrix and saved
-overrides, local checks and actual outcomes, access checks, unexecuted steps and
-blockers separately. A skipped check is not a pass. End with
+overrides, created/reused chat titles and IDs, registry location, initialization
+and runtime verification gaps, local checks and actual outcomes, access checks,
+unexecuted steps and blockers separately. A skipped check is not a pass. End with
 `$corch-development-workflow` as the next entry point, or the already assigned
 role for existing work; do not restart approved delivery. Setup alone authorizes
 no backlog mutations, commits, pushes, publication or external messages.

@@ -1,6 +1,6 @@
 interface:
   display_name: "Corch Setup"
-  short_description: "Install, configure and repair Corch in a repository"
-  default_prompt: "Use $corch-setup to configure Corch in the selected repository and verify its readiness."
+  short_description: "Configure Corch and provision project chats"
+  default_prompt: "Use $corch-setup to configure Corch in the selected repository, provision its four persistent project chats with my selected runtimes, and verify readiness."
 policy:
   allow_implicit_invocation: true

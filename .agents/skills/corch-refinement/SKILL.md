@@ -5,6 +5,18 @@ description: Refine requests in the external scrum provider's backlog, maintaini
 
 # Corch Refinement
 
+Before adopting this role in an ordinary project chat, apply the router's
+[project chat routing](../corch-development-workflow/SKILL.md#project-chat-routing).
+When a persistent Refinement chat exists, a request such as "make that into a task"
+belongs there even if the discussion happened here. Check the primary checkout's
+`.agents/task-state/project-chats.json` and verify the live destination before
+starting backlog preparation or provider writes. Selecting this skill yourself
+does not assign this chat the role. Continue here only as the verified Refinement
+chat, under an explicit human role/local assignment, or under the router's other
+stated exceptions. Missing messaging authorization requires a specific handoff
+question; unavailable discovery/messaging is a blocker, not permission to take
+over. Do not send the Refinement chat's own assignment back to itself.
+
 Resolve the external scrum provider and project from `.agents/workflow.json.scrum`
 or the user's selected project/item. Use its connected tools, or the relevant
 adapter such as `$corch-jira-api`. Read the selected item and relevant project
