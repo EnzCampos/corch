@@ -6,10 +6,13 @@ description: Implement an approved Corch plan, select proportional independent c
 # Corch Worker
 
 Own one work item, branch and checkout through delivery. Read its task record
-and entire approved Markdown plan. The Coordinator prepares the initial
-checkout/dependencies; a new Worker normally continues as the approved Planner's
-same-directory fork. Preserve that family, runtime and approval. Report incomplete
-preparation; own subsequent environment repairs and CI diagnosis.
+and entire approved Markdown plan. The Coordinator prepares the initial checkout
+and dependencies before Planner startup. A new Worker normally
+continues as the approved Planner's same-directory fork. Preserve that family,
+runtime and approval. Report incomplete preparation; own subsequent environment
+repairs and CI diagnosis.
+Use the registered absolute checkout for every command and file operation,
+including in the same-directory fork when its initial project directory differs.
 
 Follow settled behavior while adapting ordinary implementation details to the
 actual source. Reuse the existing Planner/user for material design changes,
@@ -78,23 +81,29 @@ verdict solely because that correction produced another commit.
 
 For each needed role, reuse its registered chat. For first creation, select the
 matching saved project, get `task-state.mjs runtime --issue KEY --role ROLE`, and
-create `[KEY] Reviewer` or `[KEY] Tester` with fresh history and an initialization
-turn that acknowledges and ends without tools. Stop checkout activity first.
-Wait, then register the returned real ID, role, checkout, branch and available
-host with `register-task`. No new checkout, setup, subagent or transcript fork.
+create `[KEY] Reviewer` or `[KEY] Tester` with fresh history and the full pass
+assignment in its first prompt. Stop checkout activity first. Follow the shared
+[startup contract](../corch-development-workflow/references/contracts.md#first-turn-role-startup):
+register the returned real ID, role, checkout, branch and available host with
+`register-task`, then claim its gate immediately without waiting for the target
+turn to finish. The role briefly waits for its registration/lease in that same
+turn, then starts the pass. No new checkout, setup, subagent or transcript fork.
 
 Acquire `claim-gate --issue KEY --gate review|test --thread REAL_ID --worktree
-ABSOLUTE_PATH --sha FULL_SHA` before sending work. Send a concise assignment with
-the role skill, identity, absolute checkout, actual commit, current task/plan
-references, relevant focus, previous result and output path. Refresh the target
+ABSOLUTE_PATH --sha FULL_SHA` before a reused role's next assignment. Supply a
+concise assignment with the role skill, identity, absolute checkout, actual commit,
+current task/plan references, relevant focus, previous result and output path. Refresh the target
 from current user decisions, not the implementation narrative. No JSON attempt
 packet or generated prompt is needed.
 
 Use a stable event such as `gate:review:SHA:1`. Record it with `record-event`
-only after confirmed assignment delivery. Registered chats without that event
-remain reusable. On ambiguous create/send, inspect the target before retrying.
-If a claim succeeds but sending fails, confirm the target is idle and did not
-receive work before releasing. Preserve live leases; never steal the checkout.
+only after confirmed assignment delivery, including delivery in a creation
+prompt. Registered chats without that event remain reusable. On ambiguous
+create/send, inspect the target before retrying. A creation prompt already
+delivers work: do not send it again after registration or claim. If registration
+or claiming fails, inspect and stop the target's startup before recovery. If a
+claim succeeds but sending fails, confirm the target is idle and did not receive
+work before releasing. Preserve live leases; never steal the checkout.
 
 Wait with a cursor, record the returned result reference with `record-gate`,
 and release with `end-gate` only after confirmed completion/interruption.

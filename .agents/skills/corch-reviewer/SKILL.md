@@ -11,11 +11,16 @@ install/generate, switch branches, commit/push, submit a GitHub approval, access
 production/secrets, create/fork/handoff tasks or spawn subagents. Reuse this chat
 for another pass; do not change its model unless explicitly instructed.
 
-The Worker registers your real ID and claims the checkout before assignment.
+Begin the supplied pass in the first turn under the shared
+[startup contract](../corch-development-workflow/references/contracts.md#first-turn-role-startup).
+For a new chat the Worker registers your real ID and claims the checkout
+immediately after creation; briefly wait for missing registration/lease and
+reread in that same turn. Reused chats are registered/claimed before assignment.
 Run `task-state.mjs show --issue KEY` from the supplied absolute Worker checkout.
 Match lease role, gate, thread ID, worktree and commit to the assignment before
-inspection. A missing/mismatched lease means stop and report. Never guess IDs,
-register yourself, acquire/release a lease, create a checkout or run setup.
+inspection. Use the registered role ID when the creation prompt cannot include
+the returned ID. A mismatched lease or expired startup wait means stop and report.
+Never guess IDs, register yourself, acquire/release a lease, create a checkout or run setup.
 Use the supplied checkout explicitly for all reads and commands; the chat's
 initial project directory may be different.
 

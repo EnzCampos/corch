@@ -12,10 +12,18 @@ chats or spawn subagents. Reuse this chat for corrections and publication.
 
 ## Test the assigned target
 
+Begin the supplied pass in the first turn under the shared
+[startup contract](../corch-development-workflow/references/contracts.md#first-turn-role-startup).
+For a new chat the Worker registers your real ID and claims the checkout
+immediately after creation; briefly wait for missing registration/lease and
+reread in that same turn. Reused chats are registered/claimed before assignment.
+
 Before source inspection or execution, run `task-state.mjs show --issue KEY`
 from the supplied absolute Worker checkout. Match the active lease's role, gate,
-thread ID, worktree and commit. Stop/report a mismatch. The Worker registers and
-claims; you never guess IDs, register, acquire/release leases or prepare a new
+thread ID, worktree and commit. Use the registered role ID when the creation
+prompt cannot include the returned ID. Stop/report a mismatch or expired startup
+wait. The Worker registers and claims; you never guess IDs, register,
+acquire/release leases or prepare a new
 checkout. All commands and paths use the Worker checkout explicitly.
 
 Test the latest user-authorized target from its task/plan references. A PR is

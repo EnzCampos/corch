@@ -178,10 +178,11 @@ export async function prepareWorktree({
   if (
     (issueKey !== undefined || threadId !== undefined) &&
     (!ISSUE_PATTERN.test(issueKey ?? "") ||
-      typeof threadId !== "string" ||
-      !/^[a-zA-Z0-9_-]{1,128}$/u.test(threadId))
+      (threadId !== undefined &&
+        (typeof threadId !== "string" ||
+          !/^[a-zA-Z0-9_-]{1,128}$/u.test(threadId))))
   ) {
-    throw new Error("Planner bootstrap requires a valid issue and thread ID");
+    throw new Error("Planner bootstrap requires a valid issue and optional thread ID");
   }
   const root = git(cwd, ["rev-parse", "--show-toplevel"]);
   const gitDirectory = path.resolve(
@@ -244,15 +245,21 @@ export async function prepareWorktree({
           }
           git(root, ["switch", reservedBranch]);
         }
-        invokeState("register-task", "--issue", issueKey, "--role", "planner", "--kind", "task",
-          "--thread", threadId, "--worktree", root, "--branch", reservedBranch);
+        if (threadId !== undefined) {
+          invokeState("register-task", "--issue", issueKey, "--role", "planner", "--kind", "task",
+            "--thread", threadId, "--worktree", root, "--branch", reservedBranch);
+        }
 
       }
       const result = await prepareDependencies(root, execute);
       if (issueKey) {
         const current = invokeState("show", "--issue", issueKey);
+        const planner = current.tasks.planner;
+        const plannerChanged = threadId !== undefined
+          ? planner?.threadId !== threadId
+          : planner && !planner.retired;
         if (git(root, ["branch", "--show-current"]) !== reservedBranch || !current.workItem?.acceptance?.length ||
-            current.delivery?.headBranch !== reservedBranch || current.tasks.planner?.threadId !== threadId || current.activeCheckoutGate)
+            current.delivery?.headBranch !== reservedBranch || plannerChanged || current.activeCheckoutGate)
           throw new Error("Prepared checkout identity or context changed during setup");
       }
       return result;
@@ -274,11 +281,11 @@ function parseArguments(argv) {
     options[key] = value;
   }
   if (
-    !options.issueKey || !options.threadId ||
+    !options.issueKey ||
     !options.cwd || !path.isAbsolute(options.cwd)
   ) {
     throw new Error(
-      "Planner preparation requires --issue, --thread and an absolute --worktree",
+      "Planner preparation requires --issue and an absolute --worktree; --thread is optional",
     );
   }
   return options;
@@ -292,7 +299,7 @@ if (
     const argv = process.argv.slice(2);
     if (argv.length === 1 && ["--help", "-h"].includes(argv[0])) {
       process.stdout.write(
-        "Usage: node prepare-worker-worktree.mjs [--issue KEY --thread ID --worktree ABSOLUTE_PATH]\nWith no arguments, verify Local Environment dependencies only.\n",
+        "Usage: node prepare-worker-worktree.mjs [--issue KEY --worktree ABSOLUTE_PATH [--thread ID]]\nWith no arguments, verify Local Environment dependencies only.\nWith --issue and --worktree, prepare before Planner creation; --thread also registers an existing Planner.\n",
       );
     } else {
       process.stdout.write(

@@ -23,12 +23,17 @@ segue o ciclo coordenado, salvo instrução direta do usuário.
    e cria ou atualiza o item com resultado, critérios de aceitação e dependências.
    Conversas e documentos podem iniciar a solicitação; o item refinado fica no provedor.
 2. **Coordinator** verifica o item, suas dependências e responsabilidades, registra os metadados e
-   prepara o checkout compartilhado do Planner e do Worker.
-3. **Planner** resolve o desenho com o usuário e salva o plano Markdown. A aprovação
+   prepara o worktree, a branch e as dependências antes de iniciar o Planner.
+   Depois cria o Planner com a atribuição completa e registra sua identidade e checkout,
+   sem uma conversa intermediária de confirmação de prontidão.
+3. **Planner** começa o planejamento no primeiro turno com o checkout já preparado,
+   resolve o desenho com o usuário e salva o plano Markdown. A aprovação
    desse plano é preservada na continuação do Worker.
 4. **Worker** implementa, valida o candidato e seleciona os checks independentes
    necessários, conforme sua skill. Quando ambos são selecionados, **Reviewer**
    revisa antes de **Tester** verificar o comportamento, no mesmo checkout.
+   Essas conversas também recebem a atribuição na criação e começam a passagem
+   no primeiro turno, após confirmar registro e lease.
 5. Após correções, o Worker escolhe as novas passagens necessárias e explica como
    resolveu os achados. Um commit novo não obriga a repetir todas as funções.
 6. A PR normalmente é criada na prontidão local. Um rascunho pode ser aberto antes

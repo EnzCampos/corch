@@ -256,7 +256,7 @@ have `--help`. They require no runtime npm dependencies in an adopting project.
 
 | Command | Responsibility |
 | --- | --- |
-| `prepare-worker-worktree.mjs` | With no arguments, Local Environment setup only. With `--issue`, `--thread`, `--worktree`, validate the task's prepared checkout/branch, register the real Planner and finish configured setup. |
+| `prepare-worker-worktree.mjs` | With no arguments, Local Environment setup only. With `--issue` and `--worktree`, validate context/identity, attach the reserved branch and finish setup before Planner creation. Optional `--thread` also registers a real existing Planner. |
 | `task-state.mjs show` | Read the selected record without taking the writer lock. |
 | `task-state.mjs record-context` / `record-delivery` | Store compact structured stdin with `--expected-revision`. |
 | `task-state.mjs record-route` | Save initial classification, rationale, signals and resolved runtime. |
@@ -279,10 +279,50 @@ Legacy `begin-gate` remains an alias for a registered role, with the same checko
 and commit verification; new instructions use `claim-gate`.
 
 Only one Reviewer/Tester uses the mutable Worker checkout at a time. The Worker
-creates/registers, claims, sends, waits and releases. Role initialization ends
-before claiming and assignment. On ambiguous app operations inspect the live
-target and delivered event before retrying. State records are not live UI state.
-No hook, dispatch executable or nested role orchestration is required.
+creates with the assignment, registers, claims, waits and releases; a reused chat
+is claimed before sending its next assignment. Follow First-turn role startup
+below. On ambiguous app operations inspect the live target and delivered event
+before retrying. State records are not live UI state. No hook, dispatch executable
+or nested role orchestration is required.
+
+## First-turn role startup
+
+Create issue-family role chats with their full actionable assignment. The first
+turn performs the assigned planning, review or testing; never use
+an acknowledgement-only turn followed by a second dispatch. The approved
+Planner-to-Worker fork still receives its implementation assignment after the
+Coordinator registers it; forking is not another planning or readiness turn.
+Persistent project entry points provisioned by Setup may wait when no work has
+been assigned.
+
+The creator records the returned real ID and checkout immediately after creation
+completes, without waiting for the role turn to end. The Coordinator creates and
+fully prepares the managed worktree before starting the Planner, then registers
+the returned Planner ID. It creates a local project chat assigned to that prepared
+absolute checkout; requesting a new worktree at chat creation would discard the
+preparation. Planner and its Worker fork use the assigned checkout explicitly
+for all operations even when their initial project directory differs. The Worker
+registers and claims each new Reviewer/Tester before its inspection or execution.
+The creation prompt supplies task/plan references, checkout information available
+before creation, branch/commit as applicable, responsible sender and expected
+output. The registered role entry supplies the returned ID. Never invent either
+the ID or checkout. A preparation failure prevents Planner startup; the Planner
+never runs setup or repairs a missing branch/environment.
+
+If creation starts the role before registration or its lease is visible, the
+role rereads `show` in its assigned checkout, waiting at most 60 seconds in
+intervals of at most five seconds within that same turn. During this startup wait
+it performs only identity/state checks. A conflicting identity or lease blocks
+immediately; missing prerequisites after the deadline are a concrete startup
+blocker. Once verified, continue the assignment immediately. The creator waits
+for actual work progress or a blocker, not readiness. A failed creator-side
+registration/claim requires inspecting and stopping the target before retrying.
+
+Creation with an assignment counts as dispatch. Record a stable delivered event
+only after confirming delivery to a real chat; do not send the same assignment
+again after registration. Preserve event/target checks for ambiguous outcomes.
+Recover an older idle chat by sending its actual assignment once, preserving its
+family, checkout and runtime.
 
 ## Portable command execution
 

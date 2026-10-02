@@ -48,27 +48,44 @@ Get the Planner runtime with `task-state.mjs runtime --role planner --issue KEY`
 Verify the current configured base, reserve its `corch/` task branch and create
 the managed Planner worktree from that branch using the available app tools.
 Reuse suitable existing artifacts and never replace a family because its name
-is old. Create `[KEY] Planner` with an initialization-only prompt: acknowledge
-and end, without tools or planning. Resolve its real ID and absolute checkout,
-wait for that turn, then run:
+is old. Resolve the actual absolute checkout after managed worktree creation
+completes, then run preparation yourself before starting the Planner:
 
 ```
-node prepare-worker-worktree.mjs --issue KEY --thread REAL_ID --worktree ABSOLUTE_PATH
+node prepare-worker-worktree.mjs --issue KEY --worktree ABSOLUTE_PATH
 ```
 
-The helper validates the saved identity, safely attaches the branch, registers
-the Planner and completes configured setup with the environment's shared cache
-and lock. Only after success send the planning assignment: role skill, task key,
-record path, checkout, Coordinator ID and expected plan path. Do not generate a
-bootstrap packet or duplicate source content. On failure reuse the chat and
-checkout. Inspect ambiguous app outcomes before recreating or resending.
+This validates task context and delivery identity, safely attaches the reserved
+branch and completes configured setup without requiring or inventing a Planner
+ID. On failure preserve the checkout and report the concrete blocker; do not
+start the Planner. Reuse completed setup on recovery.
+
+After success create `[KEY] Planner` as a local chat in the selected saved project
+with the full planning assignment in its first prompt: role skill, task key,
+absolute prepared checkout, canonical record location, reserved branch,
+Coordinator ID and expected plan path. The chat operates in the supplied prepared
+checkout even if its initial project directory differs; do not request another
+worktree during chat creation. Instruct it to begin planning directly under the
+shared [first-turn startup contract](../corch-development-workflow/references/contracts.md#first-turn-role-startup).
+Immediately register the returned real ID, checkout, reserved branch and available
+host with `register-task --role planner --kind task` in that checkout. Do not
+wait for the Planner turn to finish before registration. Wait for actual planning
+progress, questions or a plan; a readiness acknowledgement is not dispatch.
+
+Do not generate a bootstrap packet or duplicate source content. Inspect ambiguous
+app outcomes before recreating or resending. For an existing idle Planner, verify
+it has finished its turn and has no active checkout lease, then run preparation
+with its real `--thread` ID in its registered checkout before sending the full
+assignment once. Never prepare a checkout while its role is using it.
 
 ## Continue the approved plan
 
 The Planner saves its Markdown and obtains approval once. Wait for the approved
 turn to finish, then fork that Planner with `environment.type="same-directory"`.
-Name/register the Worker in the same branch and checkout. Obtain its saved
-runtime with `task-state.mjs runtime --role worker --issue KEY`, then send the
+Name/register the Worker in the same branch and checkout.
+The fork retains the prepared checkout assignment; use that absolute checkout
+for every command and file operation even if the chat's initial directory differs.
+Obtain its saved runtime with `task-state.mjs runtime --role worker --issue KEY`, then send the
 implementation assignment with the plan path/revision and task record.
 Use `worker-route:N` for continuation deduplication and record only confirmed
 delivery. Check both saved events and the target chat after an ambiguous call.
