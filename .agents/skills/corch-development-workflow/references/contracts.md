@@ -71,7 +71,7 @@ See Portable command execution for platform requirements and bounded execution.
 ## Persistent project chats
 
 Setup can provision four project entry points: Work Delegator (`delegator`),
-Delivery Orchestrator/Coordinator (`coordinator`), Refinement (`refinement`) and
+Project Orchestrator (`orchestrator`), Refinement (`refinement`) and
 Workflow Changer (`workflow`). They use local project chats, not worktrees or
 issue-family registration. `resolveRuntime(config, role)` resolves their desired
 model/effort without an issue record. Optional complete pairs in the corresponding
@@ -105,6 +105,16 @@ tracked configuration or copy this registry from another project or host.
 Store it with normal file tools, re-reading and preserving other entries; setup
 serializes provisioning for a project. No new task-state command or family is
 needed. Do not feed this file to issue-state helpers or count it as a delivery.
+
+Project Orchestrator is the role formerly named Delivery Coordinator. The canonical
+skill is `$corch-project-orchestrator` and the runtime/registry key is `orchestrator`.
+When reading an older registry, use `chats.coordinator` as the Orchestrator candidate
+if `chats.orchestrator` is absent, then verify its live identity normally. Setup
+migrates that entry to `chats.orchestrator`, preserving its thread ID, host, title
+and observed runtime. If both entries exist, verify their identities and reconcile
+them before writing; never discard a distinct chat or create a duplicate because
+of the rename. Historical titles remain discoverable and active families keep
+their handoff IDs and approval.
 
 Before routing to a persistent peer, read this registry from the primary checkout
 and verify the live chat's project, host and responsibility. Adopt verified existing
@@ -140,7 +150,7 @@ Keep credentials and private deployment identifiers in runtime configuration.
 | Role | Provider responsibility |
 | --- | --- |
 | Refinement | Read the relevant backlog, check duplicates, create/update the bounded item, acceptance and dependency relationships, then verify the saved result. |
-| Coordinator | Read the selected item and dependencies before dispatch; verify readiness, ownership and priority when prioritization is requested; reconcile lifecycle completion after verified merge and the project's completion criteria. |
+| Orchestrator | Read the selected item and dependencies before dispatch; verify readiness, ownership and priority when prioritization is requested; reconcile lifecycle completion after verified merge and the project's completion criteria. |
 | Planner | Plan from the agreed snapshot and linked item; return material scope discrepancies without silently redefining the backlog. |
 | Worker | Keep authorized in-progress/blocked/review transitions and the eventual PR link current; disclose pending synchronization and never mark Done just for opening a PR. |
 | Reviewer | Review the agreed target; return findings to Worker without independently editing the provider item. |
@@ -211,7 +221,7 @@ item without discarding its plan, approval or active family.
 A hard dependency has `key`, `kind: "hard"`, `requiredMilestone: "merged" | "done"`,
 `verified` and `evidence`. A coordination dependency has `key`,
 `kind: "coordination"` and a concrete non-overlapping `boundary`. The helper
-checks shape; Refinement verifies meaning and Coordinator decides readiness.
+checks shape; Refinement verifies meaning and Orchestrator decides readiness.
 
 Start with expected revision 0. The helper stores `workItem.revision` and
 increments it on changed content. An identical current/retried write is
@@ -264,9 +274,9 @@ have `--help`. They require no runtime npm dependencies in an adopting project.
 | `task-state.mjs escalate-route` | Atomically record an evidenced upward route change with `--expected-revision`; no active checkout lease. |
 | `task-state.mjs register-task` | Record real role/thread/checkout/branch and optional host. Planner also uses `--kind task`. |
 | `task-state.mjs record-plan` | Record the existing ignored Markdown path and positive revision. |
-| `task-state.mjs claim-gate` | Atomically claim a registered Worker checkout and actual commit for a review/test thread. |
+| `task-state.mjs claim-gate` | Atomically claim a registered Worker checkout at its actual HEAD anchor for a review/test thread; committed and working-tree candidates are supported. |
 | `task-state.mjs end-gate` | Release the matching gate/thread only after the owner confirms completion. |
-| `task-state.mjs record-gate` | Record an existing contained result file and its observed commit; no verdict interpretation. |
+| `task-state.mjs record-gate` | Record an existing contained result file and its observed HEAD anchor; the Markdown identifies the candidate, with no helper verdict interpretation. |
 | `task-state.mjs record-event` | Deduplicate a stable event against its real target after confirmed delivery. |
 | `task-state.mjs retire-task` | Retire the matching identity when its work is finished. |
 | `run-bounded-check.mjs` | Run `--issue KEY --name LABEL [--timeout-ms N] -- COMMAND ARG...`, saving sanitized bounded logs and the actual outcome. Default deadline is 180000 ms; choose a suitable explicit deadline for longer checks. |
@@ -284,6 +294,10 @@ is claimed before sending its next assignment. Follow First-turn role startup
 below. On ambiguous app operations inspect the live target and delivered event
 before retrying. State records are not live UI state. No hook, dispatch executable
 or nested role orchestration is required.
+The Worker's role contract owns this entire lifecycle, including runtime selection,
+direct role communication, repeat passes and recovery. Reviewer/Tester management
+never routes through the Orchestrator; inspecting the final handoff does not make
+the Orchestrator their dispatcher or checkout lease owner.
 
 ## First-turn role startup
 
@@ -291,12 +305,12 @@ Create issue-family role chats with their full actionable assignment. The first
 turn performs the assigned planning, review or testing; never use
 an acknowledgement-only turn followed by a second dispatch. The approved
 Planner-to-Worker fork still receives its implementation assignment after the
-Coordinator registers it; forking is not another planning or readiness turn.
+Orchestrator registers it; forking is not another planning or readiness turn.
 Persistent project entry points provisioned by Setup may wait when no work has
 been assigned.
 
 The creator records the returned real ID and checkout immediately after creation
-completes, without waiting for the role turn to end. The Coordinator creates and
+completes, without waiting for the role turn to end. The Orchestrator creates and
 fully prepares the managed worktree before starting the Planner, then registers
 the returned Planner ID. It creates a local project chat assigned to that prepared
 absolute checkout; requesting a new worktree at chat creation would discard the
@@ -360,14 +374,20 @@ on each supported operating system before claiming compatibility there.
 overrides. Setup presents baseline and effective model/effort choices using
 `resolveRuntime(config, role, options)` from that module. Planner and Tester
 accept complete `model`/`reasoningEffort` pairs, as do persistent project roles
-`delegator`, `coordinator`, `refinement` and `workflow`; Worker accepts such pairs keyed
+`delegator`, `orchestrator`, `refinement` and `workflow`; Worker accepts such pairs keyed
 by classification. Reviewer accepts a pair or `"worker"` (also the default),
 which follows the saved Worker route. Tester resolves independently of project
 Worker overrides. Keep default choices implicit and save only project overrides.
 Setup and direct delivery use their current chat settings; adapters share their
 invoking role. Project-chat settings select new chats, not the runtime of an
-existing Refinement, Coordinator or other persistent chat automatically.
+existing Refinement, Orchestrator or other persistent chat automatically.
 Host model/effort support must be checked separately from schema validation.
+
+Legacy `runtimes.coordinator` and the old runtime role selector resolve to
+Orchestrator for compatibility. Setup migrates the key to `runtimes.orchestrator`
+while preserving its selected pair. Defining both keys is rejected as ambiguous.
+The canonical skill replaces `corch-delivery-coordinator`; remove that obsolete
+skill directory when updating an inactive installation, preserving its local state.
 
 Worker routes retain `execution-route/v2` and their original model,
 effort and revision history. Config edits affect new selections, not saved
@@ -383,10 +403,45 @@ path and revision. The Planner owns design and plan updates; state checks file
 identity, not design quality. Direct user decisions preserve their own approval.
 The Worker and all other roles read the current record and referenced plan.
 
+## Candidate identity
+
+Reviewer and Tester accept both committed and uncommitted candidates. Neither
+role requires committing, pushing or creating a PR. Preserve restrictions on
+those actions; do not seek commit permission merely to run independent checks.
+An empty `delivery.allowedOperations` records no publication/commit authority;
+it does not prevent already authorized local validation and independent role
+work. Role creation/messaging still uses its established human authorization.
+
+For an uncommitted candidate, `claim-gate --sha` and `record-gate --sha` use the
+actual current HEAD SHA. `observedSha` is the checkout's HEAD anchor, not a claim
+that Git contains the candidate. The existing lease verifies role, checkout,
+branch and HEAD and serializes access; it does not fingerprint mutable content.
+Do not invent a SHA or create a commit to satisfy these commands.
+
+Before dispatch, the Worker records the target as working-tree in its existing
+handoff/evidence, with HEAD and the exact staged/unstaged patch references or
+content hashes, plus paths/content hashes for relevant non-ignored untracked
+files. Include added/deleted files and preserve unrelated edits. Each role checks
+that identity before and after its pass and reads/tests the actual candidate.
+Keep the Worker idle and serialize roles while the checkout lease is active.
+A changed HEAD, patch or relevant file invalidates the assumed target; report
+the mismatch and preserve prior observations instead of claiming a pass on the
+new content. No new task-state schema or generated attempt packet is required.
+
+Assignments and Markdown results name the candidate type and its diff/content
+reference alongside the HEAD anchor. Same HEAD with different uncommitted content
+is a different candidate: increment attempt/event identities and result paths,
+preserving older results. Verify content identity before carrying evidence into
+another pass or the final handoff; choose repeat work from the changed behavior
+and remaining uncertainty. Never call a working-tree verdict approval of a commit.
+
 ## Common Reviewer/Tester result
 
-The Worker selects initial and repeat passes under its role skill. Only executed
-passes produce independent results; skipped roles are explained in the handoff.
+Coordinated delivery requires initial Reviewer and Tester passes in separate
+registered chats unless the human explicitly waives a role. The Worker chooses
+their focus and repeat passes under its role skill. Only executed passes produce
+independent results; a skipped initial role requires the recorded human waiver.
+Local CI, builds and Worker checks are Worker evidence, never independent results.
 Both first and returning passes use readable Markdown at
 `.agents/evidence/TASK-N/<observedSha>/<role>-<attempt>.md`. Keep completed
 technical results and stable finding identities; state points at the latest
@@ -394,12 +449,13 @@ actual result for that role. Legacy JSON result files remain historical records
 and need no automatic conversion. The following is required information, not
 an exact heading, phrase, word-count or file-type validator:
 
-- Identity: task, role, actual observed commit, relevant comparison range and
+- Identity: task, role, actual observed HEAD, committed/working-tree candidate
+  and its diff/content reference, relevant comparison range and
   optional previous result. PR metadata is optional.
 - Verdict/summary: Reviewer uses `APPROVED`, `CHANGES_REQUESTED`, `BLOCKED`;
   Tester uses `PASS`, `FAIL`, `BLOCKED`.
 - Acceptance covered, actual checks/outcomes, evidence references, explicit
-  gaps and user waivers. Reused evidence retains its original observed commit,
+  gaps and user waivers. Reused evidence retains its original observed candidate,
   source result and rationale for applicability.
 - Stable findings/failures, including a disposition for each previously open
   relevant item. Do not silently drop failures or turn a waiver into a pass.
@@ -413,14 +469,14 @@ On return, update the common result and retain earlier technical observations.
 
 Worker decides subsequent role passes from changed behavior and remaining
 uncertainty. It may verify a straightforward fix itself and document that
-resolution without changing the original independent verdict or observed commit.
+resolution without changing the original independent verdict or observed candidate.
 If it cannot establish the fix/impact, return to the appropriate existing role.
 Neither a changed SHA nor an older review automatically demands another pass.
 
 ## Handoff and publication
 
 The Worker writes `.agents/task-state/TASK-N-handoff.md` with current outcomes,
-initial role selections and rationale, original role results, findings
+initial role results or explicit human waivers, findings
 dispositions, repeat-pass reasoning, evidence links and confidence gaps.
 This is the human handoff, not a serialized gate.
 Record each explicit waiver's user decision, reason, exact check and affected
@@ -428,7 +484,7 @@ acceptance here. `SKIPPED` means not executed; unverified acceptance is
 `NOT_VERIFIED`, never PASS. Preserve real failures, blocked outcomes and older
 observations. A failure requires a demonstrated fix or revised user target.
 
-When no Tester was selected, the Worker preserves and publishes its actual
+When the human waived the initial Tester, the Worker preserves and publishes its actual
 validation evidence within existing authorization. Inspect and sanitize artifacts,
 keep them contained in the task's evidence directory, and explain what they prove
 and who produced them. An omitted Tester is not an independent PASS, and evidence
@@ -446,7 +502,7 @@ Local evidence is sufficient when no external destination was selected.
 
 ## PR timing and readiness
 
-Default to PR creation at local readiness after the selected independent checks
+Default to PR creation at local readiness after the required independent checks
 and necessary corrections. After a coherent candidate and focused local checks,
 create a draft earlier when it unlocks the next required validation step: PR-only
 CI, a preview deployment or a required integration environment. If a branch push
@@ -468,6 +524,14 @@ demonstrated fix or revised user target. Unavailable unwaived required checks
 block readiness and remain disclosed. Rerun only checks affected by relevant
 code/environment changes or failure remediation. No new approval or timing
 packet is required when the action is already authorized.
+
+`Ready for human review` requires the independent results or explicit human
+waivers, satisfied required acceptance/checks, and completion of the delivery's
+already authorized commit, push, PR, evidence and scrum actions. If any required
+step fails, is unavailable or lacks authority, report delivery as incomplete with
+the concrete blocker and next action; disclose it without claiming readiness.
+Local-only delivery is valid when that is the agreed target. Optional gaps remain
+identified as such and do not silently waive a required acceptance criterion.
 
 ## On-demand retrospective
 

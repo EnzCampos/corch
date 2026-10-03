@@ -59,7 +59,7 @@ verification, and its evidence, including the provider item/link where available
 If the provider lacks native dependency links, describe the directed relationship
 on the item and retain its verified reference locally. Missing verification remains
 unresolved. A coordination dependency needs a concrete non-overlapping ownership boundary.
-The Coordinator assesses readiness from these facts without a preflight packet.
+The Orchestrator assesses readiness from these facts without a preflight packet.
 
 Direct user decisions supersede source/spec/plan guidance. Update the record
 without diluting them; source administration never blocks an already-authorized
@@ -77,7 +77,7 @@ alone grants no publication authority.
 Return the internal key/revision, external item link, verified changes, record
 location, readiness and concrete blockers. A failed provider write remains pending.
 When coordination is authorized, send one deduplicated handoff to the supplied
-Coordinator and record confirmed delivery with `record-event`; inspect ambiguous
+Orchestrator and record confirmed delivery with `record-event`; inspect ambiguous
 delivery before retrying. No separate refinement-result packet or progress pings.
 
 Use helpers in `../corch-development-workflow/scripts/` and the shared contract

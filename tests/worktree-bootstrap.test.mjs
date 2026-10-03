@@ -174,7 +174,7 @@ test("explicit simultaneous preparation attaches different branches and register
     );
   }));
 
-test("Coordinator prepares the worktree before a Planner exists and registers it afterward", () =>
+test("Orchestrator prepares the worktree before a Planner exists and registers it afterward", () =>
   fixture(async ({ primary, create, execute, calls }) => {
     const task = create(89);
     const stateScript = path.join(scripts, "task-state.mjs");

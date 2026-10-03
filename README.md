@@ -2,11 +2,12 @@
 
 Workflow reutilizável de desenvolvimento com IA para o Codex. Mudanças pontuais
 elegíveis são entregues na conversa atual. O ciclo coordenado usa Refinement,
-Coordinator, Planner e Worker, com Reviewer e Tester selecionados conforme o risco.
+Project Orchestrator, Planner e Worker, com Reviewer e Tester independentes.
 Três helpers cuidam da preparação, do estado e da execução de comandos.
 
-O Worker decide quais revisões e testes independentes são necessários desde a
-primeira passagem e após correções. As funções consideram o comportamento
+O ciclo coordenado exige uma primeira passagem de Reviewer e Tester, salvo
+dispensa explícita do usuário. O Worker define o foco e decide quais novas
+passagens são necessárias após correções. As funções consideram o comportamento
 alterado e as evidências; os scripts preservam identidade, concorrência e execução segura.
 
 O [router](.agents/skills/corch-development-workflow/SKILL.md) define a
@@ -22,18 +23,20 @@ segue o ciclo coordenado, salvo instrução direta do usuário.
 1. **Refinement** consulta o backlog do provedor scrum externo, verifica duplicatas
    e cria ou atualiza o item com resultado, critérios de aceitação e dependências.
    Conversas e documentos podem iniciar a solicitação; o item refinado fica no provedor.
-2. **Coordinator** verifica o item, suas dependências e responsabilidades, registra os metadados e
+2. **Orchestrator** verifica o item, suas dependências e responsabilidades, registra os metadados e
    prepara o worktree, a branch e as dependências antes de iniciar o Planner.
    Depois cria o Planner com a atribuição completa e registra sua identidade e checkout,
    sem uma conversa intermediária de confirmação de prontidão.
 3. **Planner** começa o planejamento no primeiro turno com o checkout já preparado,
    resolve o desenho com o usuário e salva o plano Markdown. A aprovação
    desse plano é preservada na continuação do Worker.
-4. **Worker** implementa, valida o candidato e seleciona os checks independentes
-   necessários, conforme sua skill. Quando ambos são selecionados, **Reviewer**
+4. **Worker** implementa, valida o candidato e executa as passagens independentes
+   iniciais, salvo dispensa explícita do usuário. **Reviewer**
    revisa antes de **Tester** verificar o comportamento, no mesmo checkout.
    Essas conversas também recebem a atribuição na criação e começam a passagem
    no primeiro turno, após confirmar registro e lease.
+   O Worker cria ou reutiliza essas conversas, registra, atribui, acompanha e
+   recupera as passagens diretamente, sem pedir ao Orchestrator que as gerencie.
 5. Após correções, o Worker escolhe as novas passagens necessárias e explica como
    resolveu os achados. Um commit novo não obriga a repetir todas as funções.
 6. A PR normalmente é criada na prontidão local. Um rascunho pode ser aberto antes
@@ -48,22 +51,33 @@ segue o ciclo coordenado, salvo instrução direta do usuário.
 O provedor scrum mantém o backlog, a prioridade e o ciclo de vida dos itens.
 O registro local mantém o contexto acordado e o estado de execução; decisões
 diretas do usuário prevalecem sobre conteúdo anterior do provedor. Refinement
-verifica as alterações gravadas antes de entregar o item ao Coordinator.
+verifica as alterações gravadas antes de entregar o item ao Orchestrator.
 Sem acesso ao provedor, o refinamento fica pendente com um bloqueio concreto;
 um rascunho local não o substitui nem altera a elegibilidade da entrega direta.
 Uma indisponibilidade não desfaz a autorização de uma implementação já em
 andamento; a sincronização pendente deve ser informada.
 
-Revisão e testes podem funcionar sem PR; checks que dependem de um preview ou
+Revisão e testes podem funcionar sem commit novo ou PR. Para mudanças não
+commitadas, o SHA de HEAD ancora o checkout; as funções identificam também o
+conteúdo efetivamente revisado/testado, incluindo mudanças staged, unstaged e
+arquivos novos relevantes. Uma restrição a commits não impede essas passagens.
+Checks que dependem de um preview ou
 ambiente de integração usam o destino verificado para o commit atribuído.
-Quando selecionado, o Tester escolhe, inspeciona, sanitiza e publica evidências
-adequadas à aceitação, sem cotas de screenshots ou logs. Sem Tester, o Worker
+O Tester escolhe, inspeciona, sanitiza e publica evidências
+adequadas à aceitação, sem cotas de screenshots ou logs. Quando o usuário dispensa o Tester, o Worker
 preserva suas evidências de validação e identifica sua autoria. Um rascunho de PR
 já pode receber evidências autorizadas. Se o destino ainda não existir, os
 artefatos são salvos primeiro e publicados depois, sem repetir testes.
 Uma falha de upload exige recuperação da publicação; não muda o resultado técnico.
 Sem destino externo, links locais bastam. Fontes externas não autorizam publicação
 automaticamente. Instruções e dispensas explícitas do usuário continuam válidas.
+
+Checks locais aprovados não encerram a entrega coordenada. Antes de declarar
+prontidão para revisão humana, o Worker conclui as funções independentes exigidas,
+resolve lacunas de aceitação e executa commit, push, PR, evidências e atualizações
+scrum exigidos pela entrega e já autorizados. Etapas exigidas pendentes ou sem
+autorização deixam a entrega incompleta, com bloqueio e próxima ação explícitos.
+Uma entrega acordada como local não exige publicação externa.
 
 ## Conteúdo
 
@@ -126,7 +140,7 @@ raciocínio recomendados por função e verifica a prontidão local. As escolhas
 a política de runtime existente e preservam as preferências do projeto.
 
 Quando solicitado, o setup também provisiona quatro conversas persistentes:
-Work Delegator, Delivery Orchestrator (Coordinator), Refinement e Workflow
+Work Delegator, Project Orchestrator, Refinement e Workflow
 Changer. Resolve os modelos/esforços, obtém a seleção exigida pelo aplicativo,
 reutiliza conversas verificadas e cria somente as ausentes no projeto local.
 As identidades ficam em `.agents/task-state/project-chats.json`, ignorado pelo
@@ -159,7 +173,7 @@ planos e aprovações existentes.
 ## Runtime e recuperação
 
 `runtimes` aceita pares `model`/`reasoningEffort` para Planner, Tester,
-`delegator`, `coordinator`, `refinement`, `workflow` e classificações do Worker.
+`delegator`, `orchestrator`, `refinement`, `workflow` e classificações do Worker.
 Reviewer também aceita `"worker"`. Os quatro campos de conversas persistentes
 selecionam o runtime na criação; não alteram conversas existentes automaticamente.
 As rotas gravadas

@@ -1,12 +1,12 @@
 ---
 name: corch-worker
-description: Implement an approved Corch plan, select proportional independent checks, and deliver the verified change, opening a draft PR when required validation needs it.
+description: Implement an approved Corch plan, obtain independent review and testing, select proportional repeat passes, and deliver the verified change.
 ---
 
 # Corch Worker
 
 Own one work item, branch and checkout through delivery. Read its task record
-and entire approved Markdown plan. The Coordinator prepares the initial checkout
+and entire approved Markdown plan. The Orchestrator prepares the initial checkout
 and dependencies before Planner startup. A new Worker normally
 continues as the approved Planner's same-directory fork. Preserve that family,
 runtime and approval. Report incomplete preparation; own subsequent environment
@@ -46,7 +46,11 @@ code/environment changes or failure remediation. Record
 actual outcomes, waived checks and unverified acceptance without fabricating
 PASS results. A demonstrated failure needs a verified fix or revised user target.
 
-Commit a stable candidate for independent work. Apply the shared PR timing
+Freeze a stable candidate for independent work. Commit it only within existing
+authorization; a new commit is not a prerequisite for Reviewer or Tester. For
+an uncommitted candidate, use the actual current HEAD SHA as the checkout anchor
+and follow the shared [candidate identity contract](../corch-development-workflow/references/contracts.md#candidate-identity).
+Do not request commit permission solely to dispatch these roles. Apply the shared PR timing
 contract: default to local readiness, but after a coherent implementation and
 focused checks open a draft when required CI, a preview or an integration
 environment needs it. If a branch push provides the same validation, use that
@@ -59,23 +63,29 @@ Continue to serialize all activity in the shared checkout.
 
 ## Initial review and testing
 
-Select initial independent checks from the actual diff, risk, acceptance and
-existing validation:
+Own the full Reviewer/Tester lifecycle directly: resolve their configured runtimes,
+create or reuse their chats, register identities, assign passes, claim and release
+checkout leases, wait for results, handle findings/select repeat passes, and recover
+failed or ambiguous operations. Communicate with both roles directly within the
+family's established human authorization. Do not ask the Orchestrator to create,
+register, dispatch, monitor, retry or relay these roles. A role-tool/access failure
+is your concrete blocker to diagnose and report, not a handoff of their management
+to the Orchestrator. Escalation of the Worker's own runtime or cross-family
+dependencies remains separate from Reviewer/Tester management.
 
-- Reviewer for meaningful logic, design, contracts, security or difficult
-  reasoning that needs independent inspection.
-- Tester for runtime behavior, integration, UI or acceptance uncertainty that
-  needs independent execution.
-- Both when both concerns exist; neither only for clearly low-risk changes
-  adequately covered by focused checks.
+Run both initial independent passes: Reviewer, then Tester, in their separate
+registered chats. The Worker cannot skip either based on its own risk judgment,
+passing local CI, test counts or a successful build. Reading a role's skill or
+performing its checks yourself does not execute that independent role.
+Choose each pass's focus from the actual diff, risk, acceptance and existing
+validation; avoid duplicating checks without a concrete reason.
 
-Record the selection and a short rationale in the existing handoff. Honor
-explicit user-required roles/checks and waivers; an agent-selected skip cannot
-waive a requirement or erase a failure. Label unexecuted roles `SKIPPED` and
-disclose uncovered acceptance without creating a passing result. Reassess the
-selection if the implementation or observed risk changes.
+Only an explicit human waiver can omit an initial role. Record the user's
+decision, waived role and coverage gap in the handoff; label it `SKIPPED`, never
+an independent pass. Missing tools or failed creation are concrete blockers,
+not a waiver. Preserve explicit user-required checks and existing authorization.
 
-When both roles are selected, finish review before testing, resolving findings
+Finish review before testing, resolving findings
 or documenting the Worker's verified correction. Do not require a new Reviewer
 verdict solely because that correction produced another commit.
 
@@ -90,13 +100,16 @@ turn to finish. The role briefly waits for its registration/lease in that same
 turn, then starts the pass. No new checkout, setup, subagent or transcript fork.
 
 Acquire `claim-gate --issue KEY --gate review|test --thread REAL_ID --worktree
-ABSOLUTE_PATH --sha FULL_SHA` before a reused role's next assignment. Supply a
-concise assignment with the role skill, identity, absolute checkout, actual commit,
+ABSOLUTE_PATH --sha FULL_SHA` before a reused role's next assignment. Use the
+candidate's actual HEAD anchor for `--sha`, including an uncommitted candidate.
+Supply a concise assignment with the role skill, identity, absolute checkout,
+committed/working-tree target, HEAD anchor and candidate evidence reference,
 current task/plan references, relevant focus, previous result and output path. Refresh the target
 from current user decisions, not the implementation narrative. No JSON attempt
 packet or generated prompt is needed.
 
-Use a stable event such as `gate:review:SHA:1`. Record it with `record-event`
+Use a stable event such as `gate:review:SHA:1`, incrementing the attempt for a new
+working-tree candidate even when HEAD is unchanged. Record it with `record-event`
 only after confirmed assignment delivery, including delivery in a creation
 prompt. Registered chats without that event remain reusable. On ambiguous
 create/send, inspect the target before retrying. A creation prompt already
@@ -109,6 +122,10 @@ Wait with a cursor, record the returned result reference with `record-gate`,
 and release with `end-gate` only after confirmed completion/interruption.
 Reviewer and Tester never overlap on the shared checkout; resume edits only
 after release. They return the common Markdown result in the shared contract.
+Verify the candidate's recorded diff/content identity before reusing its results
+or handing off. A matching HEAD alone does not establish that uncommitted changes
+are unchanged. Keep earlier observations tied to their actual candidate and
+choose any necessary repeat pass under the rules below.
 
 ## Decide whether another pass is needed
 
@@ -126,13 +143,13 @@ A returning role updates affected findings and preserves prior dispositions in
 the same result structure; there are no delta/amendment/composition commands.
 
 Request runtime escalation with current revision, signals and concrete evidence
-only after ending checkout activity and active gates. The Coordinator continues
+only after ending checkout activity and active gates. The Orchestrator continues
 this same Worker; retain progress, approval and completed validation.
 
 ## Publish and hand off
 
-When selected, the Tester owns evidence for its pass and its publication. Use
-its saved artifacts and confirmed links. With no Tester selected, preserve,
+The Tester owns evidence for its pass and its publication. Use
+its saved artifacts and confirmed links. When the user waived the Tester, preserve,
 inspect, sanitize and publish the Worker's actual validation evidence under the
 shared handoff contract, labeling its source accurately. With local evidence,
 link the artifacts honestly. If the PR destination already exists, the Tester
@@ -160,10 +177,24 @@ explicit user waivers, missing coverage and evidence links. Keep failed/blocked 
 visible. Waivers never authorize unrelated external actions. Publication failures
 remain distinct from technical failures and need only publication recovery.
 
-Return `Ready for human review` when the actual required work is complete;
-disclose pending publication or unavailable checks. Never merge or mark the item
+Before returning `Ready for human review`, verify that both initial independent
+results exist with their actual registered role identities, or their explicit
+human waivers are recorded. Resolve required acceptance gaps and check failures;
+an optional label cannot dismiss behavior required by the agreed target.
+Complete the already authorized commit, push, PR, evidence and scrum updates
+required by this delivery, verifying their actual outcomes. Passing local
+validation is an intermediate milestone, not the end of an authorized delivery.
+
+If a required role, check or delivery action is unavailable, fails or lacks
+authorization, report the concrete blocker and remaining action as incomplete;
+never claim readiness alongside an unfinished requirement. Continue all work
+that is already authorized, and request only the missing destination/operation
+authority after preparing the reviewable result. An explicitly local delivery
+needs no external publication. Optional checks/publication outside the agreed
+target remain disclosed gaps, without manufacturing passing evidence.
+Never merge or mark the item
 Done merely because it is ready. Stop all processes you started. Routine CI/gate
-updates do not need Coordinator relays.
+updates do not need Orchestrator relays.
 
 See `../corch-development-workflow/references/contracts.md` for state commands
 and result conventions; helpers live under its `scripts/`. Do not load another

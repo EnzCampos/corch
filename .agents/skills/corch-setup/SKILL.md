@@ -98,7 +98,7 @@ For Reviewer set to `worker`, show that relationship and explain that its pair
 comes from the saved Worker route, not a newly resolved default. Resolve Tester
 separately; a Worker override does not automatically change Tester.
 
-Persistent project chats resolve `delegator`, `coordinator`, `refinement` and
+Persistent project chats resolve `delegator`, `orchestrator`, `refinement` and
 `workflow` through the same policy. Explain the rationale: intake routing,
 delivery coordination, scope/acceptance design, and workflow maintenance.
 Setup itself and direct delivery retain their current chat settings; adapters
@@ -133,8 +133,8 @@ omit model/effort arguments and report the effective pair as unknown unless expo
 
 | Chat title suffix | Runtime key | Responsibility |
 | --- | --- | --- |
-| Work Delegator | `delegator` | Intake and routing with `$corch-development-workflow`; send backlog requests to the actual Refinement chat and selected coordinated delivery to Coordinator. Do not switch roles locally. |
-| Delivery Orchestrator | `coordinator` | `$corch-delivery-coordinator`; ownership, readiness and the Planner/Worker lifecycle. “Delivery Coordinator” is the same role. |
+| Work Delegator | `delegator` | Intake and routing with `$corch-development-workflow`; send backlog requests to the actual Refinement chat and selected coordinated delivery to Orchestrator. Do not switch roles locally. |
+| Project Orchestrator | `orchestrator` | `$corch-project-orchestrator`; ownership, readiness and the Planner/Worker lifecycle. |
 | Refinement | `refinement` | `$corch-refinement` using the configured external scrum provider. |
 | Workflow Changer | `workflow` | Corch process, skill and configuration maintenance; use `$corch-setup` for setup/repair and the router for requested toolkit changes. “Corch Workflow” is an existing-title equivalent. |
 
@@ -142,6 +142,10 @@ Prefix new titles with the project's display name. Keep existing titles when
 reusing equivalent chats, including provider-specific Refinement names. These
 are persistent entry points, not issue-family roles; do not create Planner,
 Worker, Reviewer or Tester chats, reserve capacity, or invent an issue during setup.
+
+Apply the shared contract's legacy Orchestrator configuration/registry migration
+when encountering the former role key. Reuse the verified chat identity rather
+than provisioning another role chat because its key or title used the old name.
 
 Use `list_projects` to resolve the target project/host and `list_threads` plus
 `read_thread` to inspect candidate chats. Read the primary checkout's ignored

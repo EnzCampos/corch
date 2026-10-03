@@ -129,9 +129,13 @@ record-context and record-delivery read one JSON object from standard input.
 Use the host shell's stdin syntax or a subprocess input API to supply it.
 Replace placeholders and choose one value from each pipe-separated option.
 
+Gate --sha is the checkout's current HEAD anchor, including for an uncommitted
+candidate. A new commit is not required. The assignment and Markdown result must
+identify the actual working-tree content; the lease does not fingerprint it.
+
 register-task and record-event return already-recorded for identical entries and
 fail on conflicting identity. Before retrying an ambiguous app operation, the
-coordinator must still inspect live tasks or messages; this file is not live UI state.`;
+caller must still inspect live tasks or messages; this file is not live UI state.`;
 }
 
 function parseArguments(argv) {

@@ -52,6 +52,46 @@ test("full local helper cycle prepares a single record and records results befor
   assert.equal(forged.status, 1);
 }));
 
+test("independent roles claim and record an uncommitted candidate with no commit authority", () => fixture(({ root, state }) => {
+  write(path.join(root, "candidate.txt"), "Baseline fixture\n");
+  git(root, "add", "candidate.txt");
+  git(root, "commit", "--quiet", "-m", "baseline fixture");
+  const branch = delivery().headBranch;
+  git(root, "switch", "-c", branch);
+  state("record-context", ["--expected-revision", "0"], { input: workItem() });
+  state("record-delivery", ["--expected-revision", "0"], { input: delivery() });
+  state("register-task", ["--role", "worker", "--thread", "worker", "--worktree", root, "--branch", branch]);
+  const head = git(root, "rev-parse", "HEAD");
+  write(path.join(root, "candidate.txt"), "Staged candidate\n");
+  git(root, "add", "candidate.txt");
+  write(path.join(root, "candidate.txt"), "Working candidate\n");
+  write(path.join(root, "new-candidate.txt"), "Untracked candidate\n");
+  const status = git(root, "status", "--porcelain");
+  assert.match(status, /MM candidate.txt/);
+  assert.match(status, /\?\? new-candidate.txt/);
+  const staged = git(root, "diff", "--cached", "--binary");
+  const unstaged = git(root, "diff", "--binary");
+  for (const [gate, role, verdict] of [["review", "reviewer", "APPROVED"], ["test", "tester", "PASS"]]) {
+    state("claim-gate", ["--gate", gate, "--thread", role, "--worktree", root, "--sha", head]);
+    assert.equal(state("show").activeCheckoutGate.observedSha, head);
+    assert.equal(readFileSync(path.join(root, "candidate.txt"), "utf8"), "Working candidate\n");
+    const result = `.agents/evidence/TASK-42/${head}/${role}-1.md`;
+    write(path.join(root, result), `# TASK-42 ${role}\nTarget: working-tree at HEAD ${head}\nStaged:\n${staged}\nUnstaged:\n${unstaged}\nNew file: new-candidate.txt (Untracked candidate)\nVerdict: ${verdict}\n`);
+    state("record-gate", ["--gate", gate, "--sha", head, "--result", result]);
+    state("end-gate", ["--gate", gate, "--thread", role]);
+  }
+  const recorded = state("show");
+  assert.deepEqual(recorded.delivery.allowedOperations, []);
+  assert.equal(recorded.delivery.pullRequest, null);
+  assert.equal(recorded.tasks.reviewer.threadId, "reviewer");
+  assert.equal(recorded.tasks.tester.threadId, "tester");
+  assert.equal(recorded.gates.review.observedSha, head);
+  assert.equal(recorded.gates.test.observedSha, head);
+  assert.equal(recorded.activeCheckoutGate, undefined);
+  assert.equal(git(root, "rev-parse", "HEAD"), head, "roles need no candidate commit");
+  assert.equal(git(root, "status", "--porcelain"), status, "staged, unstaged and untracked changes are preserved");
+}));
+
 test("idle legacy state upgrades preserve identities, approval references, outcomes and events", () => fixture(({ root, state }) => {
   const legacyDelivery = delivery("TASK-42", { headBranch: "codex/task-42-fixture" });
   git(root, "switch", "-c", legacyDelivery.headBranch);

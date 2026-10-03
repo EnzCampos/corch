@@ -15,7 +15,7 @@ For new implementation requests, use direct delivery when the conditions below
 hold; otherwise route to `$corch-refinement`. Explicit user instructions about
 direct work, required roles or waived checks remain controlling.
 
-Role skills are `$corch-delivery-coordinator`, `$corch-refinement`,
+Role skills are `$corch-project-orchestrator`, `$corch-refinement`,
 `$corch-planner`, `$corch-worker`, `$corch-reviewer`, and `$corch-tester`.
 Load exactly the applicable role. Keep mechanical helpers and shared data
 conventions in this skill's `scripts/` and `references/contracts.md`.
@@ -29,7 +29,7 @@ that discussion into backlog work (for example, "make that into a task"), send
 the request and agreed context to the project's Refinement chat. Creating/refining
 epics or issues, formalizing acceptance, and splitting backlog work belong there.
 Selected refined work requested for coordinated implementation goes to the
-Delivery Coordinator. Loading a peer's skill locally is not a handoff and does
+Project Orchestrator. Loading a peer's skill locally is not a handoff and does
 not assign this chat that role. A generic request to create a task is not an
 instruction to bypass the registered role chat.
 
@@ -75,6 +75,9 @@ follow any additional project/user validation requirements. Report the actual
 checks, evidence and confidence gaps in the final response. If investigation
 reveals coordination needs or material risk, preserve work and authorization
 while routing the expanded scope to Refinement.
+Assess eligibility from the actual change, not passing test/build output. An
+active coordinated family stays coordinated; a Worker cannot switch to direct
+delivery to omit its required independent roles.
 
 Reuse established authority for commits, pushes and PRs. An implementation
 request authorizes local edits and validation, not external publication. Finish
@@ -86,10 +89,11 @@ delivery family solely to record a direct change or its PR.
 ## Coordinated delivery
 
 Refinement establishes the outcome in the external scrum provider's backlog;
-the Coordinator prepares the family; the Planner resolves implementation with
-the user. The Worker owns implementation, proportional initial independent
-checks, corrections and delivery. Its role skill defines when Reviewer, Tester,
-both or neither are needed, including repeat passes.
+the Orchestrator prepares the family; the Planner resolves implementation with
+the user. The Worker owns implementation, initial independent Reviewer and
+Tester passes, corrections and delivery. Both initial roles are required unless
+explicitly waived by the human; local validation never substitutes for them.
+The Worker selects repeat passes proportionally under its role skill.
 
 Preserve current edits, registered identities, plan approval, runtime snapshots,
 and active checkout leases. Local implementation does not itself grant external

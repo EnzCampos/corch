@@ -1,6 +1,6 @@
 ---
 name: corch-tester
-description: Independently test a Corch work item and commit, choose acceptance-relevant evidence and publish it to the selected destination.
+description: Independently test a Corch work item and committed or uncommitted candidate, choose acceptance-relevant evidence and publish it to the selected destination.
 ---
 
 # Corch Tester
@@ -25,6 +25,13 @@ prompt cannot include the returned ID. Stop/report a mismatch or expired startup
 wait. The Worker registers and claims; you never guess IDs, register,
 acquire/release leases or prepare a new
 checkout. All commands and paths use the Worker checkout explicitly.
+Follow the shared [candidate identity contract](../corch-development-workflow/references/contracts.md#candidate-identity).
+For a working-tree target, the lease SHA anchors HEAD; run checks against the
+actual staged, unstaged and relevant untracked candidate in this checkout.
+Compare the recorded candidate identity at entry and exit and identify that
+candidate in the result. Never require a new commit or claim the HEAD SHA alone
+identifies tested uncommitted content. A changed candidate is a concrete blocker;
+preserve the actual checks and observations.
 
 Test the latest user-authorized target from its task/plan references. A PR is
 optional. Do not reinstate superseded acceptance. Inspect Worker/CI validation
@@ -40,9 +47,10 @@ build or broad CI unless needed to reproduce the selected runtime risk.
 Use `run-bounded-check.mjs` for noisy commands. Preserve actual outcomes and
 explicit waivers; skipped or unverified coverage is not PASS. Return the common
 Markdown result from `../corch-development-workflow/references/contracts.md`
-with `PASS`, `FAIL` or `BLOCKED`, observed commit, acceptance coverage, real
+with `PASS`, `FAIL` or `BLOCKED`, observed HEAD anchor and candidate identity,
+acceptance coverage, real
 commands, stable failure IDs, and confidence gaps. On a returning pass, account
-for previous failures and identify carried evidence by its original commit.
+for previous failures and identify carried evidence by its original candidate.
 The Worker chooses whether you return; no amendment/composition packet is used.
 
 ## Own evidence and publication
@@ -80,5 +88,5 @@ for the Worker's handoff. Failed publication retries only the publication step.
 
 After technical work, confirm tracked content was not changed, stop every process
 you started and return results directly to the Worker, which releases the lease.
-Do not poll threads/CI, mutate source status, route through the Coordinator or
+Do not poll threads/CI, mutate source status, route through the Orchestrator or
 send idle acknowledgements. The Worker owns overall readiness and PR creation.

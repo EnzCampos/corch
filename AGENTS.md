@@ -27,13 +27,14 @@ Setup stays in the current chat and preserves active delivery ownership; version
 upgrades are outside its scope.
 
 Use `$corch-development-workflow` for implementation requests whose role is not
-assigned. A named role uses exactly its skill: `$corch-delivery-coordinator`,
+assigned. A named role uses exactly its skill: `$corch-project-orchestrator`,
 `$corch-refinement`, `$corch-planner`, `$corch-worker`, `$corch-reviewer`,
 or `$corch-tester`.
 
 The router keeps eligible bounded changes in the current chat and checkout.
-Coordinated delivery uses Refinement, Coordinator, Planner and Worker; the
-Worker selects initial and repeat Reviewer/Tester passes proportionally.
+Coordinated delivery uses Refinement, Orchestrator, Planner and Worker; the
+Worker runs initial Reviewer and Tester passes unless the human explicitly waives
+a role, and selects repeat passes proportionally.
 Follow explicit user instructions for direct work, required roles or waived
 checks. Preserve assigned families, approvals, and active checkout ownership.
 Routing eligibility, shared helpers and data conventions belong to

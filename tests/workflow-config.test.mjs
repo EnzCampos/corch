@@ -31,7 +31,7 @@ test("scrum configuration preserves provider selection, accepts unresolved legac
 });
 
 test("project chat runtime choices round-trip through project configuration", () => {
-  const runtimes = Object.fromEntries(["delegator", "coordinator", "refinement", "workflow"].map((role) =>
+  const runtimes = Object.fromEntries(["delegator", "orchestrator", "refinement", "workflow"].map((role) =>
     [role, { model: "project-model", reasoningEffort: "high" }]));
   assert.deepEqual(validateConfig({ ...CONFIG, runtimes }).runtimes, runtimes);
   assert.throws(() => validateConfig({ ...CONFIG, runtimes: { refinement: { model: "partial" } } }), /complete model\/reasoningEffort pair/);

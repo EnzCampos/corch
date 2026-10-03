@@ -20,7 +20,7 @@ test("runtime defaults and partial overrides retain the selected model and effor
 test("persistent project chat runtimes resolve without a delivery family and remain independent", () => {
   const defaults = {
     delegator: { model: "gpt-6-luna", reasoningEffort: "xhigh" },
-    coordinator: { model: "gpt-6.1-sol", reasoningEffort: "high" },
+    orchestrator: { model: "gpt-6.1-sol", reasoningEffort: "high" },
     refinement: { model: "gpt-6-astra", reasoningEffort: "xhigh" },
     workflow: { model: "gpt-6.1-sol", reasoningEffort: "xhigh" },
   };
@@ -38,7 +38,18 @@ test("persistent project chat runtimes resolve without a delivery family and rem
       assert.throws(() => validateRuntimeSettings({ [role]: invalid }));
     }
   }
-  assert.throws(() => validateRuntimeSettings({ orchestrator: defaults.coordinator }));
+  assert.throws(() => validateRuntimeSettings({ "project-orchestrator": defaults.orchestrator }));
+});
+
+test("Project Orchestrator preserves legacy runtime choices and rejects duplicate role settings", () => {
+  const override = { model: "project-model", reasoningEffort: "medium" };
+  const legacy = { runtimes: { coordinator: override } };
+  assert.deepEqual(resolveRuntime(legacy, "orchestrator"), override);
+  assert.deepEqual(resolveRuntime(legacy, "coordinator"), override);
+  assert.deepEqual(resolveRuntime({}, "coordinator"), resolveRuntime({}, "orchestrator"));
+  assert.deepEqual(resolveRuntime({ runtimes: { orchestrator: override } }, "coordinator"), override);
+  assert.throws(() => validateRuntimeSettings({ coordinator: { model: "partial" } }), /complete model\/reasoningEffort pair/);
+  assert.throws(() => validateRuntimeSettings({ coordinator: override, orchestrator: override }), /both orchestrator and legacy coordinator/);
 });
 
 test("saved runtime snapshots survive configuration changes and explicit escalation is idempotent", () => fixture(({ root, configPath, state, invoke }) => {

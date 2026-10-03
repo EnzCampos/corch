@@ -9,7 +9,7 @@ export const DEFAULT_WORKER_RUNTIMES = Object.freeze({
 });
 export const DEFAULT_PROJECT_CHAT_RUNTIMES = Object.freeze({
   delegator: { model: "gpt-6-luna", reasoningEffort: "xhigh" },
-  coordinator: { model: "gpt-6.1-sol", reasoningEffort: "high" },
+  orchestrator: { model: "gpt-6.1-sol", reasoningEffort: "high" },
   refinement: { model: "gpt-6-astra", reasoningEffort: "xhigh" },
   workflow: { model: "gpt-6.1-sol", reasoningEffort: "xhigh" },
 });
@@ -31,10 +31,13 @@ export function validateRuntime(value, label = "runtime") {
 export function validateRuntimeSettings(settings) {
   if (settings === undefined) return;
   if (!object(settings) || Object.keys(settings).some((key) =>
-    !["planner", "worker", "reviewer", "tester"].includes(key) && !Object.hasOwn(DEFAULT_PROJECT_CHAT_RUNTIMES, key))) {
-    throw new Error("runtimes must contain only planner, worker, reviewer, tester, delegator, coordinator, refinement and workflow settings");
+    !["planner", "worker", "reviewer", "tester", "coordinator"].includes(key) && !Object.hasOwn(DEFAULT_PROJECT_CHAT_RUNTIMES, key))) {
+    throw new Error("runtimes must contain only planner, worker, reviewer, tester, delegator, orchestrator, refinement and workflow settings");
   }
-  for (const role of ["planner", "reviewer", "tester", ...Object.keys(DEFAULT_PROJECT_CHAT_RUNTIMES)]) {
+  if (settings.orchestrator !== undefined && settings.coordinator !== undefined) {
+    throw new Error("use runtimes.orchestrator instead of defining both orchestrator and legacy coordinator settings");
+  }
+  for (const role of ["planner", "reviewer", "tester", "coordinator", ...Object.keys(DEFAULT_PROJECT_CHAT_RUNTIMES)]) {
     if (settings[role] === undefined || (role === "reviewer" && settings[role] === "worker")) continue;
     validateRuntime(settings[role], `runtimes.${role}`);
   }
@@ -50,9 +53,10 @@ export function validateRuntimeSettings(settings) {
 export function resolveRuntime(config, role, { classification, workerRoute } = {}) {
   validateRuntimeSettings(config.runtimes);
   const settings = config.runtimes ?? {};
+  if (role === "coordinator") role = "orchestrator";
   let runtime;
   if (Object.hasOwn(DEFAULT_PROJECT_CHAT_RUNTIMES, role)) {
-    runtime = settings[role] ?? DEFAULT_PROJECT_CHAT_RUNTIMES[role];
+    runtime = settings[role] ?? (role === "orchestrator" ? settings.coordinator : undefined) ?? DEFAULT_PROJECT_CHAT_RUNTIMES[role];
   } else if (role === "worker") {
     if (!Object.hasOwn(DEFAULT_WORKER_RUNTIMES, classification)) throw new Error("classification is invalid");
     runtime = settings.worker?.[classification] ?? DEFAULT_WORKER_RUNTIMES[classification];

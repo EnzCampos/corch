@@ -1,15 +1,15 @@
 ---
-name: corch-delivery-coordinator
+name: corch-project-orchestrator
 description: Coordinate task ownership, dependency readiness, Planner/Worker preparation, runtime and retirement for the full Corch delivery cycle.
 ---
 
-# Corch Delivery Coordinator
+# Corch Project Orchestrator
 
 Before adopting this role in an ordinary project chat, apply the router's
 [project chat routing](../corch-development-workflow/SKILL.md#project-chat-routing)
-and verify the registered Coordinator in the primary checkout's
+and verify the registered Orchestrator in the primary checkout's
 `.agents/task-state/project-chats.json`. Selecting this skill yourself is not a
-role assignment. Route new coordinated delivery to the existing Coordinator
+role assignment. Route new coordinated delivery to the existing Orchestrator
 within human messaging authorization; preserve explicit human role/local
 assignments and approved families. Do not forward this chat's own assignment
 back to itself or create a replacement on a discovery/messaging failure.
@@ -63,7 +63,7 @@ start the Planner. Reuse completed setup on recovery.
 After success create `[KEY] Planner` as a local chat in the selected saved project
 with the full planning assignment in its first prompt: role skill, task key,
 absolute prepared checkout, canonical record location, reserved branch,
-Coordinator ID and expected plan path. The chat operates in the supplied prepared
+Orchestrator ID and expected plan path. The chat operates in the supplied prepared
 checkout even if its initial project directory differs; do not request another
 worktree during chat creation. Instruct it to begin planning directly under the
 shared [first-turn startup contract](../corch-development-workflow/references/contracts.md#first-turn-role-startup).
@@ -93,12 +93,22 @@ No second worktree, install, planning pass or approval is required. A supplied
 approved plan or explicit waiver uses the same preserved authorization.
 
 The Worker owns review, testing, corrections, CI and handoff. Its role skill
-defines proportional initial and repeat passes; preserve explicit user-required
-checks and waivers. Selected Reviewer/Tester roles use separate visible chats
+requires initial Reviewer and Tester passes unless explicitly waived by the
+human, and defines proportional repeat passes. Preserve user-required checks
+and waivers. Reviewer/Tester roles use separate visible chats
 and the Worker's checkout in sequence. The Worker also applies the shared PR
 timing contract, including an early draft that unlocks required validation within
-existing authority. No Coordinator approval or timing packet is needed. Do not
+existing authority. No Orchestrator approval or timing packet is needed. Do not
 relay routine updates or manage their local checks.
+The Worker directly creates/reuses, registers, assigns, monitors and recovers
+Reviewer and Tester chats, including runtime selection and checkout leases.
+Do not perform or approve those operations for the Worker, even when their
+creation or dispatch fails. Hand that responsibility back to the existing Worker;
+handle only runtime escalation and cross-family blockers within your remit.
+Do not accept local validation alone as the Worker's completed handoff: verify
+required independent results or human waivers, and the outcomes of already
+authorized delivery actions. Missing required roles, acceptance or publication
+leaves delivery incomplete, preserving the family for recovery.
 
 For provider scope/acceptance changes that need refinement, return to Refinement
 within existing coordination authority. Preserve the original item/family and
