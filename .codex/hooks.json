@@ -1,0 +1,18 @@
+{
+  "description": "Format this repository's JavaScript modules when a Codex session ends.",
+  "hooks": {
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && node node_modules/prettier/bin/prettier.cjs --write \"**/*.mjs\"",
+            "commandWindows": "$repo = git rev-parse --show-toplevel; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Set-Location -LiteralPath $repo; node node_modules/prettier/bin/prettier.cjs --write '**/*.mjs'; exit $LASTEXITCODE",
+            "timeout": 3,
+            "statusMessage": "Formatting JavaScript modules with Prettier"
+          }
+        ]
+      }
+    ]
+  }
+}

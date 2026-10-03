@@ -4,13 +4,18 @@
   "private": true,
   "description": "Reusable Codex delivery workflow with role skills and validated handoffs",
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
+    "format": "prettier --write \"**/*.mjs\"",
+    "format:check": "prettier --check \"**/*.mjs\"",
     "test": "node --test tests/*.test.mjs",
     "test:codex-workflow": "npm test",
-    "verify:ci": "npm test"
+    "verify:ci": "npm run format:check && npm test"
   },
   "devDependencies": {
+    "prettier": "3.9.9",
     "yaml": "2.9.0"
   }
 }

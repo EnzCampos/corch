@@ -12,7 +12,11 @@ import {
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-import { WorkflowValidationError, redactText, containedPath } from "./lib/validation.mjs";
+import {
+  WorkflowValidationError,
+  redactText,
+  containedPath,
+} from "./lib/validation.mjs";
 import { runCommand } from "./lib/command-execution.mjs";
 
 const NAME_PATTERN = /^[a-z0-9][a-z0-9._-]{1,79}$/;
@@ -42,7 +46,8 @@ function parseArguments(argv) {
       args.help = true;
     else if (options[index] === "--issue") args.issueKey = options[++index];
     else if (options[index] === "--name") args.name = options[++index];
-    else if (options[index] === "--timeout-ms") args.timeoutMs = Number(options[++index]);
+    else if (options[index] === "--timeout-ms")
+      args.timeoutMs = Number(options[++index]);
     else
       throw new WorkflowValidationError([
         `unknown argument: ${options[index]}`,
@@ -55,7 +60,8 @@ function parseArguments(argv) {
       ]);
     if (!NAME_PATTERN.test(args.name ?? ""))
       throw new WorkflowValidationError(["--name is invalid"]);
-    if (!Number.isSafeInteger(args.timeoutMs) || args.timeoutMs < 1) throw new Error("--timeout-ms must be positive");
+    if (!Number.isSafeInteger(args.timeoutMs) || args.timeoutMs < 1)
+      throw new Error("--timeout-ms must be positive");
     if (args.command.length === 0)
       throw new WorkflowValidationError(["a command is required after --"]);
   }
@@ -99,7 +105,10 @@ try {
       "logs",
       args.issueKey,
     );
-    containedPath(checkoutRoot, path.relative(checkoutRoot, logDirectory).replaceAll("\\", "/"));
+    containedPath(
+      checkoutRoot,
+      path.relative(checkoutRoot, logDirectory).replaceAll("\\", "/"),
+    );
     mkdirSync(logDirectory, { recursive: true });
     if (lstatSync(logDirectory).isSymbolicLink())
       throw new WorkflowValidationError([
@@ -139,7 +148,9 @@ try {
       ...(passed ? {} : { failureTail: capped.slice(-FAILURE_TAIL_BYTES) }),
     };
     process.stdout.write(`${JSON.stringify(summary)}\n`);
-    if (!passed) process.exitCode = result.status > 0 && result.status < 256 ? result.status : 1;
+    if (!passed)
+      process.exitCode =
+        result.status > 0 && result.status < 256 ? result.status : 1;
   }
 } catch (error) {
   const messages =

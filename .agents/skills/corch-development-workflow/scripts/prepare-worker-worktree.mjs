@@ -1,9 +1,5 @@
 #!/usr/bin/env node
-import {
-  ISSUE_PATTERN,
-  CONFIG,
-  readConfig,
-} from "./lib/workflow-config.mjs";
+import { ISSUE_PATTERN, CONFIG, readConfig } from "./lib/workflow-config.mjs";
 
 import { createHash } from "node:crypto";
 import {
@@ -182,7 +178,9 @@ export async function prepareWorktree({
         (typeof threadId !== "string" ||
           !/^[a-zA-Z0-9_-]{1,128}$/u.test(threadId))))
   ) {
-    throw new Error("Planner bootstrap requires a valid issue and optional thread ID");
+    throw new Error(
+      "Planner bootstrap requires a valid issue and optional thread ID",
+    );
   }
   const root = git(cwd, ["rev-parse", "--show-toplevel"]);
   const gitDirectory = path.resolve(
@@ -201,7 +199,11 @@ export async function prepareWorktree({
     return { status: "skipped-primary-checkout" };
   }
   const invokeState = (...args) => {
-    const result = run(process.execPath, [path.join(SCRIPT_DIRECTORY, "task-state.mjs"), ...args], { cwd: root, timeout: 20_000 });
+    const result = run(
+      process.execPath,
+      [path.join(SCRIPT_DIRECTORY, "task-state.mjs"), ...args],
+      { cwd: root, timeout: 20_000 },
+    );
     assertCommand(result, "Task state");
     return JSON.parse(result.stdout);
   };
@@ -211,10 +213,20 @@ export async function prepareWorktree({
       let reservedBranch;
       if (issueKey) {
         const state = invokeState("show", "--issue", issueKey);
-        if (!state.workItem?.acceptance?.length || !state.delivery) throw new Error("Planner preparation requires task context and delivery metadata");
-        if (state.activeCheckoutGate) throw new Error("end the active checkout gate before preparation");
+        if (!state.workItem?.acceptance?.length || !state.delivery)
+          throw new Error(
+            "Planner preparation requires task context and delivery metadata",
+          );
+        if (state.activeCheckoutGate)
+          throw new Error("end the active checkout gate before preparation");
         reservedBranch = state.delivery.headBranch;
-        if (git(root, ["remote", "get-url", "origin"]) !== state.delivery.remoteUrl) throw new Error("Repository origin does not match staged delivery target");
+        if (
+          git(root, ["remote", "get-url", "origin"]) !==
+          state.delivery.remoteUrl
+        )
+          throw new Error(
+            "Repository origin does not match staged delivery target",
+          );
         const planner = state.tasks?.planner;
         if (
           planner &&
@@ -246,21 +258,41 @@ export async function prepareWorktree({
           git(root, ["switch", reservedBranch]);
         }
         if (threadId !== undefined) {
-          invokeState("register-task", "--issue", issueKey, "--role", "planner", "--kind", "task",
-            "--thread", threadId, "--worktree", root, "--branch", reservedBranch);
+          invokeState(
+            "register-task",
+            "--issue",
+            issueKey,
+            "--role",
+            "planner",
+            "--kind",
+            "task",
+            "--thread",
+            threadId,
+            "--worktree",
+            root,
+            "--branch",
+            reservedBranch,
+          );
         }
-
       }
       const result = await prepareDependencies(root, execute);
       if (issueKey) {
         const current = invokeState("show", "--issue", issueKey);
         const planner = current.tasks.planner;
-        const plannerChanged = threadId !== undefined
-          ? planner?.threadId !== threadId
-          : planner && !planner.retired;
-        if (git(root, ["branch", "--show-current"]) !== reservedBranch || !current.workItem?.acceptance?.length ||
-            current.delivery?.headBranch !== reservedBranch || plannerChanged || current.activeCheckoutGate)
-          throw new Error("Prepared checkout identity or context changed during setup");
+        const plannerChanged =
+          threadId !== undefined
+            ? planner?.threadId !== threadId
+            : planner && !planner.retired;
+        if (
+          git(root, ["branch", "--show-current"]) !== reservedBranch ||
+          !current.workItem?.acceptance?.length ||
+          current.delivery?.headBranch !== reservedBranch ||
+          plannerChanged ||
+          current.activeCheckoutGate
+        )
+          throw new Error(
+            "Prepared checkout identity or context changed during setup",
+          );
       }
       return result;
     },
@@ -271,19 +303,29 @@ export async function prepareWorktree({
 function parseArguments(argv) {
   if (argv.length === 0) return {};
   const options = {};
-  const keys = { "--issue": "issueKey", "--thread": "threadId", "--worktree": "cwd" };
+  const keys = {
+    "--issue": "issueKey",
+    "--thread": "threadId",
+    "--worktree": "cwd",
+  };
   for (let index = 0; index < argv.length; index += 2) {
-    const key = Object.hasOwn(keys, argv[index]) ? keys[argv[index]] : undefined;
+    const key = Object.hasOwn(keys, argv[index])
+      ? keys[argv[index]]
+      : undefined;
     const value = argv[index + 1];
-    if (!key || Object.hasOwn(options, key) || !value || value.startsWith("--")) {
-      throw new Error(`Unknown, duplicate or incomplete argument: ${argv[index]}`);
+    if (
+      !key ||
+      Object.hasOwn(options, key) ||
+      !value ||
+      value.startsWith("--")
+    ) {
+      throw new Error(
+        `Unknown, duplicate or incomplete argument: ${argv[index]}`,
+      );
     }
     options[key] = value;
   }
-  if (
-    !options.issueKey ||
-    !options.cwd || !path.isAbsolute(options.cwd)
-  ) {
+  if (!options.issueKey || !options.cwd || !path.isAbsolute(options.cwd)) {
     throw new Error(
       "Planner preparation requires --issue and an absolute --worktree; --thread is optional",
     );

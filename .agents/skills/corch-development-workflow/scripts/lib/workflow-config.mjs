@@ -15,15 +15,39 @@ export function validateConfig(value) {
   if (!/^[A-Z][A-Z0-9]*$/.test(value.issuePrefix ?? ""))
     fail("issuePrefix must be an uppercase project key");
   if (value.scrum !== undefined) {
-    if (!value.scrum || typeof value.scrum !== "object" || Array.isArray(value.scrum) || Object.keys(value.scrum).some((key) => !["provider", "projectUrl"].includes(key)))
-      fail("scrum must contain only provider and projectUrl; keep credentials at runtime");
-    if (value.scrum.provider != null && (typeof value.scrum.provider !== "string" || !/^[a-z][a-z0-9-]*$/.test(value.scrum.provider)))
+    if (
+      !value.scrum ||
+      typeof value.scrum !== "object" ||
+      Array.isArray(value.scrum) ||
+      Object.keys(value.scrum).some(
+        (key) => !["provider", "projectUrl"].includes(key),
+      )
+    )
+      fail(
+        "scrum must contain only provider and projectUrl; keep credentials at runtime",
+      );
+    if (
+      value.scrum.provider != null &&
+      (typeof value.scrum.provider !== "string" ||
+        !/^[a-z][a-z0-9-]*$/.test(value.scrum.provider))
+    )
       fail("scrum.provider must be a provider identifier or null");
     if (value.scrum.projectUrl != null) {
       let url;
-      try { url = new URL(value.scrum.projectUrl); } catch { /* Report a field error below. */ }
-      if (typeof value.scrum.projectUrl !== "string" || !value.scrum.projectUrl.startsWith("https://") ||
-          /[\s<>()[\]\\]/u.test(value.scrum.projectUrl) || !url || url.protocol !== "https:" || url.username || url.password)
+      try {
+        url = new URL(value.scrum.projectUrl);
+      } catch {
+        /* Report a field error below. */
+      }
+      if (
+        typeof value.scrum.projectUrl !== "string" ||
+        !value.scrum.projectUrl.startsWith("https://") ||
+        /[\s<>()[\]\\]/u.test(value.scrum.projectUrl) ||
+        !url ||
+        url.protocol !== "https:" ||
+        url.username ||
+        url.password
+      )
         fail("scrum.projectUrl must be a credential-free HTTPS URL or null");
     }
   }

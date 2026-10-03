@@ -125,6 +125,24 @@ npm ci --ignore-scripts
 npm run verify:ci
 ```
 
+A formatação dos arquivos `.mjs` usa a versão fixada do Prettier, com indentação
+de dois espaços e largura de 80 colunas. Execute `npm run format` para formatar
+ou `npm run format:check` para conferir; `verify:ci` também verifica a formatação.
+
+Nesta cópia do toolkit, `.codex/hooks.json` executa o Prettier no evento
+`SessionEnd`, a partir da raiz do checkout, inclusive em worktrees e sessões
+iniciadas em subdiretórios. O hook usa as dependências locais instaladas por
+`npm ci --ignore-scripts` e respeita `.gitignore` e `.prettierignore`.
+O evento ocorre ao arquivar ou excluir uma conversa aberta, fechar o Codex
+normalmente ou após 30 minutos de inatividade de uma conversa que não esteja
+aberta em nenhum cliente; não ocorre ao final de cada resposta.
+O Codex exige a revisão e a confiança explícita no hook antes de executá-lo:
+abra `/hooks` na CLI, revise e confie na definição, e inicie uma nova sessão
+para carregar a configuração. O timeout de `SessionEnd` é de três segundos;
+falhas de formatação são reportadas pelo Codex e podem ser corrigidas com
+`npm run format`. Esse hook é local a este repositório e não é instalado pelo
+setup do Corch nos projetos adotantes.
+
 Os testes usam dados e repositórios sintéticos temporários, sem credenciais de
 Jira/GitHub. Cobrem operações concorrentes, identidade de checkout, recuperação,
 runtime, referências seguras, comandos e instalação copiada. A validação de

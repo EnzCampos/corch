@@ -155,14 +155,24 @@ export function isSourceRef(value) {
   );
 }
 
-
 export function containedPath(root, relative) {
-  if (typeof relative !== "string" || !relative || /[\\:\0]/.test(relative) || path.isAbsolute(relative) ||
-      relative.split("/").some((part) => !part || part === "." || part === "..")) throw new Error("invalid checkout-relative path");
+  if (
+    typeof relative !== "string" ||
+    !relative ||
+    /[\\:\0]/.test(relative) ||
+    path.isAbsolute(relative) ||
+    relative.split("/").some((part) => !part || part === "." || part === "..")
+  )
+    throw new Error("invalid checkout-relative path");
   const candidate = path.resolve(root, relative);
   let ancestor = candidate;
   while (!existsSync(ancestor)) ancestor = path.dirname(ancestor);
   const difference = path.relative(realpathSync(root), realpathSync(ancestor));
-  if (difference === ".." || difference.startsWith(".." + path.sep) || path.isAbsolute(difference)) throw new Error("path escapes the checkout");
+  if (
+    difference === ".." ||
+    difference.startsWith(".." + path.sep) ||
+    path.isAbsolute(difference)
+  )
+    throw new Error("path escapes the checkout");
   return candidate;
 }

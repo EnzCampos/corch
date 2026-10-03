@@ -17,9 +17,7 @@ import test from "node:test";
 import { createExecutionRoute } from "../.agents/skills/corch-development-workflow/scripts/lib/runtime-policy.mjs";
 import { workItem, delivery } from "./helpers.mjs";
 import { runCommand as runSetupCommand } from "../.agents/skills/corch-development-workflow/scripts/lib/command-execution.mjs";
-import {
-  prepareWorktree,
-} from "../.agents/skills/corch-development-workflow/scripts/prepare-worker-worktree.mjs";
+import { prepareWorktree } from "../.agents/skills/corch-development-workflow/scripts/prepare-worker-worktree.mjs";
 
 const scripts = fileURLToPath(
   new URL(
@@ -98,10 +96,19 @@ async function fixture(action) {
       git(primary, "worktree", "add", "--detach", cwd, branch);
       const input = { delivery: delivery(issue) };
       write(path.join(primary, ".agents/task-state/" + issue + ".json"), {
-        schemaVersion: "task-state/v2", workflowProtocol: "delivery-v3", issueKey: issue,
-        tasks: {}, gates: {}, deliveredEvents: {},
-        workItem: { revision: 1, ...workItem() }, delivery: { revision: 1, ...input.delivery },
-        executionRoute: createExecutionRoute({ issueKey: issue, classification: "bounded", rationale: "A bounded fixture." }),
+        schemaVersion: "task-state/v2",
+        workflowProtocol: "delivery-v3",
+        issueKey: issue,
+        tasks: {},
+        gates: {},
+        deliveredEvents: {},
+        workItem: { revision: 1, ...workItem() },
+        delivery: { revision: 1, ...input.delivery },
+        executionRoute: createExecutionRoute({
+          issueKey: issue,
+          classification: "bounded",
+          rationale: "A bounded fixture.",
+        }),
       });
       return {
         cwd,
@@ -183,54 +190,119 @@ test("Orchestrator prepares the worktree before a Planner exists and registers i
     assert.equal(result.status, "ready");
     assert.deepEqual(result.executedSteps, ["install", "generate"]);
     assert.equal(git(task.cwd, "branch", "--show-current"), task.branch);
-    assert.deepEqual(JSON.parse(command(task.cwd, process.execPath,
-      [stateScript, "show", "--issue", task.issue])).tasks, {});
+    assert.deepEqual(
+      JSON.parse(
+        command(task.cwd, process.execPath, [
+          stateScript,
+          "show",
+          "--issue",
+          task.issue,
+        ]),
+      ).tasks,
+      {},
+    );
     assert.deepEqual((await prepareWorktree(preparation)).executedSteps, []);
-    command(task.cwd, process.execPath, [stateScript, "register-task",
-      "--issue", task.issue, "--role", "planner", "--kind", "task",
-      "--thread", task.threadId, "--worktree", task.cwd,
-      "--branch", task.branch, "--host", "local"]);
-    const state = JSON.parse(command(task.cwd, process.execPath,
-      [stateScript, "show", "--issue", task.issue]));
+    command(task.cwd, process.execPath, [
+      stateScript,
+      "register-task",
+      "--issue",
+      task.issue,
+      "--role",
+      "planner",
+      "--kind",
+      "task",
+      "--thread",
+      task.threadId,
+      "--worktree",
+      task.cwd,
+      "--branch",
+      task.branch,
+      "--host",
+      "local",
+    ]);
+    const state = JSON.parse(
+      command(task.cwd, process.execPath, [
+        stateScript,
+        "show",
+        "--issue",
+        task.issue,
+      ]),
+    );
     assert.equal(state.tasks.planner.threadId, task.threadId);
     assert.equal(state.tasks.planner.hostId, "local");
     assert.equal(state.tasks.planner.worktree, task.cwd);
-    assert.deepEqual(JSON.parse(readFileSync(path.join(primary,
-      `.agents/task-state/${task.issue}.json`))).tasks, {});
-    assert.deepEqual((await prepareWorktree({ ...task, execute })).executedSteps, []);
+    assert.deepEqual(
+      JSON.parse(
+        readFileSync(
+          path.join(primary, `.agents/task-state/${task.issue}.json`),
+        ),
+      ).tasks,
+      {},
+    );
+    assert.deepEqual(
+      (await prepareWorktree({ ...task, execute })).executedSteps,
+      [],
+    );
     assert.equal(calls.length, 2, "startup recovery reuses completed setup");
-    await assert.rejects(prepareWorktree(preparation), /another active Planner/);
-    assert.equal(calls.length, 2, "pre-creation setup cannot modify an active Planner checkout");
+    await assert.rejects(
+      prepareWorktree(preparation),
+      /another active Planner/,
+    );
+    assert.equal(
+      calls.length,
+      2,
+      "pre-creation setup cannot modify an active Planner checkout",
+    );
   }));
 
 test("failed preparation before chat creation leaves no Planner and retries completed steps", () =>
   fixture(async ({ create, execute, calls }) => {
     const task = create(88);
     const preparation = { cwd: task.cwd, issueKey: task.issue };
-    await assert.rejects(prepareWorktree({ ...preparation,
-      execute: (...args) => args[1][1] === "generate"
-        ? { status: 1, stderr: "generation failed" }
-        : execute(...args),
-    }), /Setup step generate failed/);
-    const state = JSON.parse(command(task.cwd, process.execPath,
-      [path.join(scripts, "task-state.mjs"), "show", "--issue", task.issue]));
+    await assert.rejects(
+      prepareWorktree({
+        ...preparation,
+        execute: (...args) =>
+          args[1][1] === "generate"
+            ? { status: 1, stderr: "generation failed" }
+            : execute(...args),
+      }),
+      /Setup step generate failed/,
+    );
+    const state = JSON.parse(
+      command(task.cwd, process.execPath, [
+        path.join(scripts, "task-state.mjs"),
+        "show",
+        "--issue",
+        task.issue,
+      ]),
+    );
     assert.deepEqual(state.tasks, {});
     const result = await prepareWorktree({ ...preparation, execute });
     assert.equal(result.status, "ready");
     assert.deepEqual(result.executedSteps, ["generate"]);
-    assert.deepEqual(calls.map((call) => call.action), ["install", "generate"]);
+    assert.deepEqual(
+      calls.map((call) => call.action),
+      ["install", "generate"],
+    );
   }));
 
 test("repreparation preserves newer local context over a stale primary record", () =>
   fixture(async ({ primary, create, execute }) => {
     const task = create(90);
     await prepareWorktree({ ...task, execute });
-    const localPath = path.join(task.cwd, `.agents/task-state/${task.issue}.json`);
+    const localPath = path.join(
+      task.cwd,
+      `.agents/task-state/${task.issue}.json`,
+    );
     const local = JSON.parse(readFileSync(localPath));
     local.workItem.revision = 2;
     local.workItem.userDecisions = ["Keep the newer local target"];
     write(localPath, local);
-    const primaryPath = path.join(primary, `.agents/task-state/${task.issue}.json`);
+    const primaryPath = path.join(
+      primary,
+      `.agents/task-state/${task.issue}.json`,
+    );
     const shared = JSON.parse(readFileSync(primaryPath));
     shared.workItem.outcome = "Stale primary target";
     write(primaryPath, shared);
@@ -261,59 +333,102 @@ test("Planner CLI prepares before creation with optional identity and reuses env
   fixture(async ({ primary, create, execute, calls }) => {
     const task = create(72);
     const script = path.join(scripts, "prepare-worker-worktree.mjs");
-    const args = ["--issue", task.issue, "--thread", task.threadId, "--worktree", task.cwd];
+    const args = [
+      "--issue",
+      task.issue,
+      "--thread",
+      task.threadId,
+      "--worktree",
+      task.cwd,
+    ];
     for (const invalid of [
-      args.slice(0, 2), args.slice(0, 4), args.slice(2),
-      [...args.slice(0, 5), "relative"], [...args, "--issue", task.issue],
-      ["--unknown", "value"], [...args, "constructor", "value"],
+      args.slice(0, 2),
+      args.slice(0, 4),
+      args.slice(2),
+      [...args.slice(0, 5), "relative"],
+      [...args, "--issue", task.issue],
+      ["--unknown", "value"],
+      [...args, "constructor", "value"],
       [...args.slice(0, 3), "bad\nidentity", ...args.slice(4)],
     ]) {
-      const result = spawnSync(process.execPath, [script, ...invalid], { cwd: primary, encoding: "utf8", windowsHide: true });
+      const result = spawnSync(process.execPath, [script, ...invalid], {
+        cwd: primary,
+        encoding: "utf8",
+        windowsHide: true,
+      });
       assert.equal(result.status, 1, result.stdout);
       assert.equal(result.stdout, "");
     }
     assert.equal(existsSync(path.join(task.cwd, ".agents/task-state")), false);
     await prepareWorktree({ cwd: task.cwd, execute });
-    const beforeCreation = JSON.parse(command(primary, process.execPath,
-      [script, "--issue", task.issue, "--worktree", task.cwd]));
+    const beforeCreation = JSON.parse(
+      command(primary, process.execPath, [
+        script,
+        "--issue",
+        task.issue,
+        "--worktree",
+        task.cwd,
+      ]),
+    );
     assert.equal(beforeCreation.status, "ready");
     assert.deepEqual(beforeCreation.executedSteps, []);
     assert.equal(git(task.cwd, "branch", "--show-current"), task.branch);
-    assert.equal(existsSync(path.join(task.cwd, `.agents/task-state/${task.issue}.json`)), false);
-    const ready = JSON.parse(command(primary, process.execPath, [script, ...args]));
+    assert.equal(
+      existsSync(path.join(task.cwd, `.agents/task-state/${task.issue}.json`)),
+      false,
+    );
+    const ready = JSON.parse(
+      command(primary, process.execPath, [script, ...args]),
+    );
     assert.equal(ready.status, "ready");
     assert.deepEqual(ready.executedSteps, []);
     assert.equal(calls.length, 2);
     assert.equal(git(task.cwd, "branch", "--show-current"), task.branch);
-    const statePath = path.join(task.cwd, `.agents/task-state/${task.issue}.json`);
+    const statePath = path.join(
+      task.cwd,
+      `.agents/task-state/${task.issue}.json`,
+    );
     const stateBefore = readFileSync(statePath, "utf8");
     assert.equal(JSON.parse(stateBefore).tasks.planner.threadId, task.threadId);
-    assert.equal(JSON.parse(command(primary, process.execPath, [script, ...args])).status, "ready");
+    assert.equal(
+      JSON.parse(command(primary, process.execPath, [script, ...args])).status,
+      "ready",
+    );
     assert.equal(readFileSync(statePath, "utf8"), stateBefore);
   }));
 
 test("missing context and install failures block startup, release lock, and do not claim ready", () =>
   fixture(async ({ primary, create, execute, calls }) => {
     const task = create(73);
-    const statePath = path.join(primary, ".agents/task-state/" + task.issue + ".json");
+    const statePath = path.join(
+      primary,
+      ".agents/task-state/" + task.issue + ".json",
+    );
     const saved = JSON.parse(readFileSync(statePath));
     const missing = structuredClone(saved);
     delete missing.workItem;
     write(statePath, missing);
-    await assert.rejects(prepareWorktree({ ...task, execute }), /requires task context/);
+    await assert.rejects(
+      prepareWorktree({ ...task, execute }),
+      /requires task context/,
+    );
     assert.equal(calls.length, 0);
     write(statePath, saved);
-    await assert.rejects(prepareWorktree({ ...task,
-      execute: async () => ({
-        status: 1,
-        stderr: "Authorization: Bearer fixture-secret-value",
-        stdout: "",
+    await assert.rejects(
+      prepareWorktree({
+        ...task,
+        execute: async () => ({
+          status: 1,
+          stderr: "Authorization: Bearer fixture-secret-value",
+          stdout: "",
+        }),
       }),
-    }), (error) => {
-      assert.match(error.message, /Setup step install failed/);
-      assert.doesNotMatch(error.message, /fixture-secret-value/);
-      return true;
-    });
+      (error) => {
+        assert.match(error.message, /Setup step install failed/);
+        assert.doesNotMatch(error.message, /fixture-secret-value/);
+        return true;
+      },
+    );
     assert.equal(
       existsSync(
         path.join(task.cwd, ".agents/task-state/worktree-bootstrap.lock"),
@@ -326,7 +441,14 @@ test("missing context and install failures block startup, release lock, and do n
       ),
       false,
     );
-    assert.equal(JSON.parse(readFileSync(path.join(task.cwd, `.agents/task-state/${task.issue}.json`))).tasks.planner.threadId, task.threadId);
+    assert.equal(
+      JSON.parse(
+        readFileSync(
+          path.join(task.cwd, `.agents/task-state/${task.issue}.json`),
+        ),
+      ).tasks.planner.threadId,
+      task.threadId,
+    );
     assert.equal((await prepareWorktree({ ...task, execute })).status, "ready");
   }));
 
@@ -386,14 +508,23 @@ test("dirty detached, wrong head, claimed branch and duplicate Planner never res
 test("mismatched or unsupported staged identity blocks explicit preparation", () =>
   fixture(async ({ primary, create, execute, calls }) => {
     const task = create(79);
-    const statePath = path.join(primary, ".agents/task-state/" + task.issue + ".json");
+    const statePath = path.join(
+      primary,
+      ".agents/task-state/" + task.issue + ".json",
+    );
     const saved = JSON.parse(readFileSync(statePath));
     saved.delivery.headBranch = "corch/task-179-fixture";
     write(statePath, saved);
-    await assert.rejects(prepareWorktree({ ...task, execute }), /delivery identity/);
+    await assert.rejects(
+      prepareWorktree({ ...task, execute }),
+      /delivery identity/,
+    );
     assert.equal(git(task.cwd, "branch", "--show-current"), "");
     write(statePath, { schemaVersion: "task-state/v1" });
-    await assert.rejects(prepareWorktree({ ...task, execute }), /schema or issue identity/);
+    await assert.rejects(
+      prepareWorktree({ ...task, execute }),
+      /schema or issue identity/,
+    );
     assert.equal(calls.length, 0);
   }));
 
@@ -451,13 +582,7 @@ test("wrong repository and invalid registration block before dependency executio
       /Repository origin/,
     );
     assert.equal(git(task.cwd, "branch", "--show-current"), "");
-    git(
-      primary,
-      "remote",
-      "set-url",
-      "origin",
-      task.input.delivery.remoteUrl,
-    );
+    git(primary, "remote", "set-url", "origin", task.input.delivery.remoteUrl);
     const statePath = path.join(
       primary,
       `.agents/task-state/${task.issue}.json`,

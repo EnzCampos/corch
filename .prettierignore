@@ -1,0 +1,7 @@
+# Local state and generated artifacts (also covered by .gitignore).
+.agents/task-context/
+.agents/task-state/
+.agents/evidence/
+node_modules/
+outputs/
+coverage/
