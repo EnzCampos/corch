@@ -2,6 +2,7 @@
   "name": "corch",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Reusable Codex delivery workflow with role skills and validated handoffs",
   "type": "module",
   "engines": {
